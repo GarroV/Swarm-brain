@@ -46,6 +46,10 @@ export function manualClaim(input: {
  */
 export interface CalendarReference {
   /**
+   * Durable dispatch identity; separate from the calendar claim identity.
+   */
+  readonly jobId?: string;
+  /**
    * Пропуск бота на эту встречу, выданный сервером вместе с заданием (T165). С ним контейнер
    * ходит в двери за человека; нет — сервер старый, контейнер идёт с общим токеном.
    */

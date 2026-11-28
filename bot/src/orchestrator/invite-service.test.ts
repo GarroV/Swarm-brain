@@ -58,9 +58,8 @@ async function wire(): Promise<Wiring> {
     log: (line) => {
       lines.push(line);
     },
-    intervalMs: 50,
   });
-  return { server, starts, notices, lines, poll: async () => trigger.pollOnce() };
+  return { server, starts, notices, lines, poll: async () => trigger.dispatch() };
 }
 
 describe("inviteTriggerFor", () => {
@@ -110,14 +109,14 @@ describe("inviteTriggerFor", () => {
     w.server.addInvite({ joinUrl: "https://zoom.us/j/123", platform: "zoom" });
     w.server.failNext(10, 500);
 
-    await w.poll();
+    await expect(w.poll()).rejects.toThrow();
 
     expect(w.starts).toEqual([]);
     expect(w.notices).toEqual([]);
-    expect(w.lines.join("\n")).toContain("опрос приглашений не удался");
+    expect(w.lines.join("\n")).toContain("забор приглашения не удался");
   });
 
-  it("чужой человек в приглашении — отказ сервера на заявке виден в журнале", async () => {
+  it("чужой человек — отказ сервера виден в журнале и доставка не подтверждается", async () => {
     const w = await wire();
     w.server.addInvite({
       joinUrl: "https://zoom.us/j/123",
@@ -125,7 +124,7 @@ describe("inviteTriggerFor", () => {
       invitedBy: PERSON + 1,
     });
 
-    await w.poll();
+    await expect(w.poll()).rejects.toMatchObject({ status: 403 });
 
     expect(w.notices).toEqual([]);
     expect(w.lines.some((line) => line.startsWith("ОТКАЗ НЕ ДОСТАВЛЕН"))).toBe(true);

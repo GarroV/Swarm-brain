@@ -16,5 +16,6 @@ export interface Beat {
 
 export interface Service {
   readonly lines: string[];
+  signal(id: string): Promise<void>;
   stop(): Promise<void>;
 }

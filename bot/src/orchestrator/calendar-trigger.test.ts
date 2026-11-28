@@ -1,6 +1,6 @@
 /**
- * Автозапуск по календарю (T100): каждые 45 с оркестратор забирает задания и поднимает бота
- * за владельца календаря. Правило то же, что у приглашений (D017), — про тишину: не пойдёт —
+ * Автозапуск по календарю (T100): сигнал Swarm запускает забор задания и подъём бота
+ * за владельца календаря. Правило то же, что у приглашений (D017): не пойдёт —
  * громкий отказ или строка в журнал, а не молчание.
  */
 import { describe, expect, it } from "vitest";
@@ -84,12 +84,12 @@ function harness(): Harness {
   return Object.assign(state, { trigger });
 }
 
-describe("CalendarTrigger.pollOnce", () => {
+describe("CalendarTrigger.dispatch", () => {
   it("задание на Meet — бот поднят от имени владельца календаря", async () => {
     const h = harness();
     h.batches.push(sweep({ jobs: [job()] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.started.map((taken) => [taken.id, taken.invited_by])).toEqual([
       ["job-1", 744_230_399],
@@ -102,8 +102,8 @@ describe("CalendarTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(sweep({ jobs: [job()] }), sweep({ jobs: [job()] }));
 
-    await h.trigger.pollOnce();
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
+    await h.trigger.dispatch();
 
     expect(h.started).toHaveLength(1);
     expect(h.lines.join("\n")).toMatch(/job-1.*повторно/u);
@@ -113,7 +113,7 @@ describe("CalendarTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(sweep({ jobs: [job({ platform: "zoom" })] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.started).toEqual([]);
     expect(h.refused).toHaveLength(1);
@@ -125,7 +125,7 @@ describe("CalendarTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(sweep({ jobs: [job({ platform: "kontur" })] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.refused).toEqual([]);
     expect(h.started).toHaveLength(1);
@@ -136,13 +136,13 @@ describe("CalendarTrigger.pollOnce", () => {
     h.failStart = new Error("no such image");
     h.batches.push(sweep({ jobs: [job()] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.refused).toHaveLength(1);
     expect(h.refused[0]?.detail).toContain("no such image");
   });
 
-  it("refuse бросил — строка «ОТКАЗ НЕ ДОСТАВЛЕН», следующее задание всё равно обработано", async () => {
+  it("refuse бросил — громкая ошибка и доставка не подтверждена", async () => {
     const h = harness();
     h.failRefuse = new Error("meeting-notice 500");
     h.batches.push(
@@ -151,18 +151,18 @@ describe("CalendarTrigger.pollOnce", () => {
       }),
     );
 
-    await h.trigger.pollOnce();
+    await expect(h.trigger.dispatch()).rejects.toThrow("meeting-notice 500");
 
     const lost = h.lines.find((line) => line.includes("ОТКАЗ НЕ ДОСТАВЛЕН"));
     expect(lost).toContain("meeting-notice 500");
-    expect(h.started.map((taken) => taken.id)).toEqual(["m"]);
+    expect(h.started).toEqual([]);
   });
 
   it("пропуск пишется в журнал один раз", async () => {
     const h = harness();
     h.batches.push(sweep({ skipped: [skip()] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.lines).toHaveLength(1);
     expect(h.lines[0]).toMatch(/БОТ НЕ ПОЙДЁТ/u);
@@ -173,9 +173,9 @@ describe("CalendarTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(sweep({ skipped: [skip()] }), sweep({ skipped: [skip()] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     h.nowMs += HOUR_MS - 1;
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.lines).toHaveLength(1);
   });
@@ -184,27 +184,29 @@ describe("CalendarTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(sweep({ skipped: [skip()] }), sweep({ skipped: [skip()] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     h.nowMs += HOUR_MS;
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.lines).toHaveLength(2);
   });
 
-  it("сбой sweep — строка в журнал, а не исключение наружу", async () => {
+  it("сбой забора — строка в журнал и ошибка для повтора", async () => {
     const h = harness();
     h.failSweep = new Error("meeting-calendar 503");
 
-    await expect(h.trigger.pollOnce()).resolves.toBeUndefined();
+    await expect(h.trigger.dispatch()).rejects.toThrow("meeting-calendar 503");
 
-    expect(h.lines.join("\n")).toMatch(/опрос календарей не удался.*meeting-calendar 503/u);
+    expect(h.lines.join("\n")).toMatch(
+      /забор календарного задания не удался.*meeting-calendar 503/u,
+    );
   });
 
   it("забранное, но не разобранное задание — громко в журнал", async () => {
     const h = harness();
     h.batches.push(sweep({ jobs: [job()], malformed: ["jobs[1] (job-9): нет platform"] }));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.lines.join("\n")).toMatch(/ЗАДАНИЕ ПОТЕРЯНО.*job-9/u);
     expect(h.started).toHaveLength(1);
@@ -218,7 +220,7 @@ describe("CalendarTrigger.pollOnce", () => {
       }),
     );
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.trigger.startedCount).toBe(2);
   });

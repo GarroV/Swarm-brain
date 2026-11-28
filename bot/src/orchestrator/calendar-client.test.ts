@@ -1,5 +1,5 @@
 /**
- * Клиент `POST /meeting-calendar` (T100). Забранное задание не вернётся сервером повторно,
+ * Клиент `POST /meeting-calendar` (T100). Сигнал забирает одно задание и подтверждает старт,
  * поэтому кривой разбор здесь стоит так же дорого, как у приглашений (D017): пропущенное —
  * в `malformed` с причиной, а не потеряно молча.
  */
@@ -35,19 +35,17 @@ const validSkip = {
 };
 
 describe("сверка с сервером", () => {
-  it("имена полей задания — ровно JOB_COLUMNS сервера", () => {
-    expect(server).toContain(
-      'const JOB_COLUMNS = "id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at"',
-    );
-    for (const field of Object.keys(validJob)) {
-      expect(server).toContain(field);
-    }
+  it("имена полей задания совпадают с исходящей проекцией сервера", () => {
+    const projection = /jobs:\s*\[\{(?<fields>[^}]+)\}\]/u.exec(server)?.groups?.fields ?? "";
+    const fields = projection.split(",").map((field) => field.trim().split(":", 1)[0]);
+    expect(fields).toEqual([...Object.keys(validJob), "grant_token"]);
   });
 
   it("ответ — { ok: true, jobs, skipped }", () => {
     // jobs — те же задания с пропуском бота на встречу (T165), под именем grant_token.
-    expect(server).toContain("json({ ok: true, ...result, jobs })");
-    expect(server).toContain("grant_token: tokens[n]");
+    expect(server).toMatch(/return json\(\{\s*ok: true,\s*jobs:/u);
+    expect(server).toMatch(/grant_token: token\s*\}\],\s*skipped: \[\]/u);
+    expect(server).toContain("json({ ok: true, terminal: true, jobs: [], skipped: [] })");
   });
 });
 

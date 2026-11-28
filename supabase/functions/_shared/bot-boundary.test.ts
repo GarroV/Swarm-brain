@@ -24,11 +24,20 @@ const BOT_MODULES = [
   "_shared/calendar-missed.ts",
   "_shared/calendar-miss-store.ts",
   "_shared/calendar-snapshot.ts",
+  "_shared/calendar-push-plan.ts",
+  "_shared/calendar-push-google.ts",
+  "_shared/calendar-push-store.ts",
+  "_shared/calendar-push-report.ts",
+  "_shared/scriba-signals.ts",
+  "_shared/scriba-work.ts",
+  "calendar-push/",
+  "scriba-dispatch/",
   // Кому из принявших встречу слать уведомления бота (12.11.2026).
   "_shared/notice-recipients.ts",
   // Живая проверка календаря у переключателя (решение 01.10.2026).
   "_shared/autojoin-calendar.ts",
   "swarm-api/autojoin.ts",
+  "swarm-api/meeting-invites.ts",
   "meeting-calendar/",
   "meeting-calendar-snapshot/",
   "meeting-missed/",
@@ -47,7 +56,7 @@ const CORE_MAY_IMPORT = [
  * Веб-API отдаёт переключатель автозапуска со своего адреса — ручка целиком в autojoin.ts.
  */
 const MOUNTS: Record<string, string[]> = {
-  "swarm-api/index.ts": ["swarm-api/autojoin.ts"],
+  "swarm-api/index.ts": ["swarm-api/autojoin.ts", "swarm-api/meeting-invites.ts"],
 };
 
 /** Имя бота. `transcribator` в названиях дизайн-доков — не оно. */

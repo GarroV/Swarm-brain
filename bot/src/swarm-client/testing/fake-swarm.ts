@@ -1,3 +1,4 @@
+import { takeSignalledInvite } from "./fake-swarm-signals.ts";
 import type {
   FakeSwarmOptions,
   FakeInvite,
@@ -12,8 +13,7 @@ export type { FakeSwarm, FakeSwarmOptions } from "./fake-swarm-types.ts";
  * Фальшивый сервер Swarm для тестов `swarm-client`: настоящий HTTP-сервер на `node:http`,
  * поднимаемый в процессе теста и повторяющий контракт пяти эндпоинтов настоящего сервера —
  * ровно тот, что живёт в `contract.ts`. Против него живой клиент ходит по реальной сети на
- * localhost, а не через мок `fetch`: так тест ловит расхождения в заголовках, кодировке формы
- * и статусах, которые мок бы просто не заметил.
+ * localhost; тест ловит расхождения в заголовках, кодировке формы и статусах.
  *
  * Правила приёмки списаны с серверного кода (а не придуманы):
  *  - `supabase/functions/meeting-ingest/index.ts` — `buildTrackParts` и обработчик;
@@ -495,14 +495,18 @@ class FakeSwarmServer implements FakeSwarm {
     if (authorization !== `Bearer ${this.token}`) return refuse(401, "bad token");
     if (onBehalfOf !== null) return refuse(403, "X-On-Behalf-Of is not accepted by this endpoint");
 
+    const targeted = takeSignalledInvite(
+      isRecord(parsed) ? parsed : null,
+      this.invites,
+      this.grants,
+    );
+    if (targeted !== null) return targeted;
     const raw = isRecord(parsed) ? parsed.limit : undefined;
     if (raw !== undefined && (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1)) {
       return refuse(400, "limit must be a positive integer");
     }
     const limit = Math.min(raw ?? INVITE_DEFAULT_LIMIT, INVITE_MAX_LIMIT);
     const now = Date.now();
-    // Map хранит порядок вставки — это и есть «старые первыми». Забор синхронный, поэтому два
-    // одновременных опроса одну запись не делят — как условный UPDATE на сервере.
     const pending: InviteRecord[] = [];
     for (const record of this.invites.values()) {
       const isOpen = !record.taken && !record.used;
@@ -727,6 +731,7 @@ class FakeSwarmServer implements FakeSwarm {
   }
 
   addInvite(input: {
+    id?: string;
     joinUrl: string;
     platform?: string;
     invitedBy?: number;
@@ -736,7 +741,7 @@ class FakeSwarmServer implements FakeSwarm {
     // Время создания растёт строго: порядок «старые первыми» не зависит от разрешения часов.
     const createdMs = Date.now() + this.inviteSeq;
     const invite: FakeInvite = {
-      id: `invite-${String(this.inviteSeq)}`,
+      id: input.id ?? `invite-${String(this.inviteSeq)}`,
       invited_by: input.invitedBy ?? this.onBehalfOfId,
       join_url: input.joinUrl,
       platform: input.platform ?? "meet",

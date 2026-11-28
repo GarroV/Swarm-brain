@@ -1,32 +1,14 @@
 /**
- * Вход «автозапуск по календарю» (T100, решение D015) — основной путь бота: каждые 45 с
- * оркестратор зовёт `POST /meeting-calendar`, сервер отдаёт задания на ближайшие встречи Meet из
- * календарей людей, включивших автозапуск, и этот цикл поднимает бота за владельца календаря.
- * Ручной запуск из веба (`invite-trigger.ts`, D017) остаётся рядом как постоянный запасной путь.
- *
- * Правило то же, что у приглашений, — про тишину:
- *   • встреча, на которую бот не пойдёт (нет ссылки, не Meet, календарь не подключён, токен мёртв),
- *     приходит от сервера пропуском с причиной и пишется в журнал громко — один раз, а не каждую
- *     минуту, иначе журнал утонет и громкое станет шумом;
- *   • задание, по которому контейнер не поднялся, кончается `join_failed` человеку (EN+RU).
- *
- * Одна встреча не поднимает двух ботов: сервер заводит одно задание на встречу воркспейса и
- * отдаёт его один раз, а цикл вдобавок помнит запущенное до конца встречи.
+ * Сигнал Swarm запускает забор одного уже спланированного календарного задания (T100).
+ * Пропуски пишутся громко и один раз; ошибка забора не подтверждается отправителю.
+ * Условный забор и durable start acknowledgement находятся на сервере.
  */
 import type { CalendarJob, CalendarSkip, CalendarSweep } from "./calendar-client.ts";
 import { isSupportedPlatform } from "./config.ts";
 import { describeError } from "./describe-error.ts";
+import { RetryableWorkError } from "./work-delivery.ts";
 import { refusalDetail, type Refusal } from "./invite-trigger.ts";
-import { PollLoop } from "./poll-loop.ts";
 
-/**
- * Период опроса — заметно короче простоя, после которого рантайм функций гасит обработчик
- * (`requestAbsentTimeoutMs` = 60 с в `deploy/server/edge-runtime/main.ts`). При опросе ровно раз
- * в минуту запрос изредка приходил в момент гашения, и рантайм отвечал 546 WORKER_RESOURCE_LIMIT
- * («request has been cancelled by supervisor», #1000): опрос пропадал на цикл. Каждые 45 с
- * обработчик `meeting-calendar` не простаивает и гашения не дожидается.
- */
-export const DEFAULT_INTERVAL_MS = 45_000;
 /**
  * Сколько не повторять в журнале один и тот же пропуск. Встреча выпадает из окна сама минут через
  * десять; пропуск уровня человека (календарь не подключён) повторяется раз в час — чтобы его было
@@ -53,7 +35,7 @@ export interface CalendarTriggerOptions {
   /**
    * Один проход по календарям воркспейса (`CalendarClient.sweep`).
    */
-  readonly sweep: () => Promise<CalendarSweep>;
+  readonly sweep: (id?: string) => Promise<CalendarSweep>;
   /**
    * Поднять бота по заданию; возвращает id контейнера.
    */
@@ -62,8 +44,8 @@ export interface CalendarTriggerOptions {
    * Сказать человеку, что бот не придёт (`join_failed`).
    */
   readonly refuse: (job: CalendarJob, detail: string) => Promise<void>;
+  readonly complete?: (id: string) => Promise<void>;
   readonly log: (line: string) => void;
-  readonly intervalMs?: number;
   readonly now?: () => number;
 }
 
@@ -90,17 +72,10 @@ export class CalendarTrigger {
    */
   private readonly said = new Map<string, number>();
 
-  private readonly loop: PollLoop;
-
   private readonly options: CalendarTriggerOptions;
 
   constructor(options: CalendarTriggerOptions) {
     this.options = options;
-    this.loop = new PollLoop(
-      "календарь",
-      async () => this.pollOnce(),
-      options.intervalMs ?? DEFAULT_INTERVAL_MS,
-    );
   }
 
   private get nowMs(): number {
@@ -130,6 +105,7 @@ export class CalendarTrigger {
       this.options.log(
         `ОТКАЗ НЕ ДОСТАВЛЕН по встрече ${job.calendar_key}: ${describeError(error)} — человек не узнает, что бот не придёт`,
       );
+      throw error;
     }
   }
 
@@ -138,19 +114,21 @@ export class CalendarTrigger {
       this.options.log(`задание ${job.id} пришло повторно — второго бота не поднимаю`);
       return;
     }
-    this.started.set(job.id, Date.parse(job.ends_at));
-
     if (!isSupportedPlatform(job.platform)) {
       await this.refuse(job, { kind: "platform", platform: job.platform });
+      this.started.set(job.id, Date.parse(job.ends_at));
       return;
     }
     try {
       const id = await this.options.start(job);
+      this.started.set(job.id, Date.parse(job.ends_at));
       this.options.log(
         `встреча ${job.calendar_key} (календарь ${String(job.invited_by)}) → контейнер ${id}`,
       );
     } catch (error) {
+      if (error instanceof RetryableWorkError) throw error;
       await this.refuse(job, { kind: "start_failed", reason: describeError(error) });
+      this.started.set(job.id, Date.parse(job.ends_at));
     }
   }
 
@@ -159,30 +137,25 @@ export class CalendarTrigger {
   }
 
   /**
-   * Один проход: забрать задания и сказать о пропусках. Не бросает — сбой пишется в журнал.
+   * По сигналу забрать задание и сказать о пропусках. Ошибка передаётся для повторной доставки.
    */
-  async pollOnce(): Promise<void> {
+  async dispatch(id?: string): Promise<void> {
     const now = this.nowMs;
     this.forget(now);
     let sweep: CalendarSweep;
     try {
-      sweep = await this.options.sweep();
+      sweep = await this.options.sweep(id);
     } catch (error) {
-      this.options.log(`опрос календарей не удался: ${describeError(error)}`);
-      return;
+      this.options.log(`забор календарного задания не удался: ${describeError(error)}`);
+      throw error;
     }
     for (const problem of sweep.malformed) {
       this.options.log(`ЗАДАНИЕ ПОТЕРЯНО (забрано, но не разобрано): ${problem}`);
     }
     for (const skip of sweep.skipped) this.report(skip, now);
+    if (id !== undefined && sweep.malformed.length > 0)
+      throw new Error("malformed targeted calendar job");
     for (const job of sweep.jobs) await this.handle(job);
-  }
-
-  start(): void {
-    this.loop.start();
-  }
-
-  async close(): Promise<void> {
-    await this.loop.close();
+    if (id !== undefined) await this.options.complete?.(id);
   }
 }

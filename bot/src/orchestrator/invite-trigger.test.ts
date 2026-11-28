@@ -4,7 +4,7 @@
  * пришёл, человек ждал, записи нет. Поэтому на каждое «не пошли» — громкий отказ человеку, а
  * одно приглашение никогда не поднимает двух ботов.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { MeetingInvite } from "../swarm-client/contract.ts";
 import type { TakenInvites } from "../swarm-client/invites.ts";
@@ -45,7 +45,7 @@ interface Harness {
   failExit: Error | null;
 }
 
-function harness(intervalMs = 1000, shouldWatchExit = true): Harness {
+function harness(shouldWatchExit = true): Harness {
   const state: Omit<Harness, "trigger"> = {
     started: [],
     refused: [],
@@ -79,7 +79,6 @@ function harness(intervalMs = 1000, shouldWatchExit = true): Harness {
     log: (line) => {
       state.lines.push(line);
     },
-    intervalMs,
   });
   return Object.assign(state, { trigger });
 }
@@ -88,16 +87,12 @@ function batch(...invites: MeetingInvite[]): TakenInvites {
   return { invites, malformed: [] };
 }
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-describe("InviteTrigger.pollOnce", () => {
+describe("InviteTrigger.dispatch", () => {
   it("приглашение на Meet — бот поднят от имени позвавшего", async () => {
     const h = harness();
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.started.map((taken) => [taken.id, taken.invited_by])).toEqual([["inv-1", PERSON]]);
     expect(h.refused).toEqual([]);
@@ -110,7 +105,7 @@ describe("InviteTrigger.pollOnce", () => {
       batch(invite({ platform: "kontur", join_url: "https://dodobrands.ktalk.ru/abc" })),
     );
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.refused).toEqual([]);
     expect(h.started.map((taken) => taken.platform)).toEqual(["kontur"]);
@@ -125,7 +120,7 @@ describe("InviteTrigger.pollOnce", () => {
       const h = harness();
       h.batches.push(batch(invite({ platform, join_url: "https://zoom.us/j/123" })));
 
-      await h.trigger.pollOnce();
+      await h.trigger.dispatch();
 
       expect(h.started).toEqual([]);
       expect(h.refused).toHaveLength(1);
@@ -143,7 +138,7 @@ describe("InviteTrigger.pollOnce", () => {
     h.failStart = new Error("no such image");
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.refused).toHaveLength(1);
     expect(h.refused[0]?.detail).toContain("no such image");
@@ -154,7 +149,7 @@ describe("InviteTrigger.pollOnce", () => {
     h.exit = { kind: "died", meetingId: null, exitCode: 137 };
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     await h.trigger.settled();
 
     expect(h.refused).toHaveLength(1);
@@ -173,7 +168,7 @@ describe("InviteTrigger.pollOnce", () => {
     h.exit = exit;
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     await h.trigger.settled();
 
     expect(h.refused).toEqual([]);
@@ -184,7 +179,7 @@ describe("InviteTrigger.pollOnce", () => {
     h.failExit = new Error("docker gone");
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     await h.trigger.settled();
 
     expect(h.refused).toEqual([]);
@@ -192,34 +187,34 @@ describe("InviteTrigger.pollOnce", () => {
   });
 
   it("ожидание выхода не подключено — бот поднят, следить не за чем", async () => {
-    const h = harness(1000, false);
+    const h = harness(false);
     h.batches.push(batch(invite()));
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
     await h.trigger.settled();
 
     expect(h.started).toHaveLength(1);
     expect(h.refused).toEqual([]);
   });
 
-  it("отказ не доставлен — громко в журнал, следующее приглашение всё равно обработано", async () => {
+  it("отказ не доставлен — громко в журнал и ошибка для повтора", async () => {
     const h = harness();
     h.failRefuse = new Error("meeting-notice 500");
     h.batches.push(batch(invite({ id: "k", platform: "zoom" }), invite({ id: "m" })));
 
-    await h.trigger.pollOnce();
+    await expect(h.trigger.dispatch()).rejects.toThrow("meeting-notice 500");
 
     const lost = h.lines.find((line) => line.startsWith("ОТКАЗ НЕ ДОСТАВЛЕН по приглашению k:"));
     expect(lost).toContain("meeting-notice 500");
-    expect(h.started.map((taken) => taken.id)).toEqual(["m"]);
+    expect(h.started).toEqual([]);
   });
 
   it("одно приглашение не поднимает двух ботов, даже если пришло повторно", async () => {
     const h = harness();
     h.batches.push(batch(invite(), invite()), batch(invite()));
 
-    await h.trigger.pollOnce();
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
+    await h.trigger.dispatch();
 
     expect(h.started).toHaveLength(1);
     expect(h.lines.join("\n")).toMatch(/inv-1.*повторно/u);
@@ -229,26 +224,26 @@ describe("InviteTrigger.pollOnce", () => {
     const h = harness();
     h.batches.push(batch(invite({ expires_at: "2000-01-01T00:00:00.000Z" })), batch(invite()));
 
-    await h.trigger.pollOnce();
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
+    await h.trigger.dispatch();
 
     expect(h.trigger.rememberedCount).toBe(1);
   });
 
-  it("опрос сорвался — журнал, а не исключение наружу", async () => {
+  it("сбой забора не подтверждается и доступен для повтора", async () => {
     const h = harness();
     h.failTake = new Error("meeting-invite 503");
 
-    await expect(h.trigger.pollOnce()).resolves.toBeUndefined();
+    await expect(h.trigger.dispatch()).rejects.toThrow("meeting-invite 503");
 
-    expect(h.lines.join("\n")).toMatch(/опрос приглашений не удался.*meeting-invite 503/u);
+    expect(h.lines.join("\n")).toMatch(/забор приглашения не удался.*meeting-invite 503/u);
   });
 
   it("кривое приглашение в пачке — громко: оно уже забрано и потеряно", async () => {
     const h = harness();
     h.batches.push({ invites: [invite()], malformed: ["invites[1] (inv-9): нет platform"] });
 
-    await h.trigger.pollOnce();
+    await h.trigger.dispatch();
 
     expect(h.lines.join("\n")).toMatch(/ПРИГЛАШЕНИЕ ПОТЕРЯНО.*inv-9/u);
     expect(h.started).toHaveLength(1);
@@ -268,66 +263,5 @@ describe("refusalDetail", () => {
     const detail = refusalDetail({ kind: "platform", platform: "zoom" });
 
     expect(detail.length).toBeLessThanOrEqual(MAX_REFUSAL_DETAIL_CHARS);
-  });
-});
-
-describe("InviteTrigger.start / close", () => {
-  it("опрашивает по интервалу и перестаёт после close", async () => {
-    vi.useFakeTimers();
-    const h = harness(1000);
-    const take = vi.spyOn(h.trigger, "pollOnce");
-
-    h.trigger.start();
-    await vi.advanceTimersByTimeAsync(3500);
-    await h.trigger.close();
-    const calls = take.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(5000);
-
-    expect(calls).toBe(4);
-    expect(take.mock.calls).toHaveLength(calls);
-  });
-
-  it("медленный опрос не наслаивается на следующий, close дожидается идущего", async () => {
-    vi.useFakeTimers();
-    let release: (() => void) | undefined;
-    let inFlight = 0;
-    let maxInFlight = 0;
-    const trigger = new InviteTrigger({
-      take: async () => {
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        // eslint-disable-next-line unicorn/prefer-promise-with-resolvers -- lib проекта ES2023, withResolvers там нет
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        inFlight -= 1;
-        return { invites: [], malformed: [] };
-      },
-      start: () => Promise.resolve("c"),
-      refuse: () => Promise.resolve(),
-      log: (): void => {
-        // тихо
-      },
-      intervalMs: 100,
-    });
-
-    trigger.start();
-    await vi.advanceTimersByTimeAsync(1000);
-    const closed = trigger.close();
-    release?.();
-    await closed;
-
-    expect(maxInFlight).toBe(1);
-    expect(inFlight).toBe(0);
-  });
-
-  it("второй start — ошибка, а не второй цикл опроса", () => {
-    const h = harness();
-    h.trigger.start();
-
-    expect(() => {
-      h.trigger.start();
-    }).toThrow(/уже/u);
-    void h.trigger.close();
   });
 });

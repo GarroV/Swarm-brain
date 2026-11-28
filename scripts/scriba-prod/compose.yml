@@ -1,10 +1,10 @@
-# Боевой бот встреч scriba на MUSPELHEIM — только оркестратор; функции и база — прод Swarm.
+# Боевой бот встреч scriba на VPS Contabo — только оркестратор; функции и база — прод Swarm.
 # Управляется с Мака: scripts/scriba-prod.sh rollout | up | status | logs | down.
-# Руками этот файл не запускают: переменные (${...}) пишет stand.ps1 в state/prod.env.
+# Руками этот файл не запускают: переменные (${...}) пишет stand.sh в state/prod.env.
 #
 # Контейнеры встреч поднимает оркестратор сам: имена scriba-prod-meeting-<run>, том
 # scriba-prod-recordings, сеть и прокси выхода — по метке scriba.project=scriba-prod.
-# Портов наружу нет: оркестратор только ходит в прод и в Docker.
+# Портов наружу нет: сигналы приходят по общей внутренней сети Swarm.
 name: scriba-prod
 
 services:
@@ -21,6 +21,12 @@ services:
       SCRIBA_PROJECT: scriba-prod
       SCRIBA_BOT_VERSION: ${SCRIBA_BOT_VERSION}
       SCRIBA_MAX_MEETINGS: ${SCRIBA_MAX_MEETINGS:-4}
+      SCRIBA_API_NETWORK: ${SCRIBA_API_NETWORK:-swarm_default}
+      SCRIBA_SIGNAL_HOST: 0.0.0.0
+      SCRIBA_SIGNAL_PORT: 8091
+      # stand.sh refuses startup without the provisioned secret. Empty interpolation keeps
+      # compose down/config usable with the previous build's env file during rollback.
+      SCRIBA_SIGNAL_SECRET: ${SCRIBA_SIGNAL_SECRET:-}
       # Добавка к списку выхода встреч наружу — точные host:port через запятую (stand.sh берёт её
       # из $STATE/egress-extra). Пусто — только список egress-policy.ts.
       SCRIBA_EGRESS_EXTRA: ${SCRIBA_EGRESS_EXTRA:-}
@@ -38,6 +44,10 @@ services:
       # Срочные предупреждения владельцу о тишине в записи (#861) — канал FURCA; пусто — только журнал.
       SCRIBA_ALERT_CHANNEL_URL: ${SCRIBA_ALERT_CHANNEL_URL:-}
       SCRIBA_ALERT_CHANNEL_SECRET: ${SCRIBA_ALERT_CHANNEL_SECRET:-}
+    networks:
+      default: {}
+      swarm_api:
+        aliases: [scriba-signals]
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -56,3 +66,8 @@ services:
       - type: bind
         source: ${PROD_STATE_DIR}/runs
         target: /var/lib/scriba/runs
+
+networks:
+  swarm_api:
+    external: true
+    name: ${SCRIBA_API_NETWORK:-swarm_default}

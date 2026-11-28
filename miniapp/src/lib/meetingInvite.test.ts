@@ -3,6 +3,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   canInviteBot,
   inviteErrorText,
+  inviteStatusLabel,
   isFinalStatus,
   type MeetingInvite,
   parseInviteErrorCode,
@@ -18,6 +19,15 @@ const invite = (o: Partial<MeetingInvite> = {}): MeetingInvite => ({
   expires_at: "2026-09-26T10:15:00.000Z",
   meeting_id: null,
   ...o,
+});
+
+Deno.test("истечение без подтверждения бота показывает причину", () => {
+  const parsed = parseInviteResponse({ invite: invite({ status: "expired", delivery_error: "unconfirmed" }) });
+  assertEquals(parsed?.delivery_error, "unconfirmed");
+  assertEquals(
+    inviteStatusLabel("expired", (ru) => ru, parsed?.delivery_error),
+    "Истекло — бот не подтвердил приглашение",
+  );
 });
 
 Deno.test("ответ сервера { invite } разбирается как есть", () => {
@@ -72,23 +82,27 @@ Deno.test("коллега уже позвал бота в этот звонок 
 });
 
 Deno.test("canInviteBot: Meet и Контур.Толк — да, Zoom и чужие хосты — нет", () => {
-  for (const ok of [
-    "https://meet.google.com/abc-defg-hij",
-    "https://meet.google.com/abc-defg-hij?authuser=1",
-    "https://company.ktalk.ru/room1",
-    "https://talk.kontur.ru/room1",
-  ]) assertEquals(canInviteBot(ok), true, ok);
-  for (const bad of [
-    "https://us02web.zoom.us/j/123",
-    "https://evilktalk.ru/room1",
-    "https://talk.kontur.ru.evil.com/room1",
-    "https://meet.google.com.evil.com/abc",
-    "http://meet.google.com/abc-defg-hij",
-    "https://meet.google.com/",
-    "https://user:pw@meet.google.com/abc",
-    "не ссылка",
-    "",
-    null,
-    undefined,
-  ]) assertEquals(canInviteBot(bad), false, String(bad));
+  for (
+    const ok of [
+      "https://meet.google.com/abc-defg-hij",
+      "https://meet.google.com/abc-defg-hij?authuser=1",
+      "https://company.ktalk.ru/room1",
+      "https://talk.kontur.ru/room1",
+    ]
+  ) assertEquals(canInviteBot(ok), true, ok);
+  for (
+    const bad of [
+      "https://us02web.zoom.us/j/123",
+      "https://evilktalk.ru/room1",
+      "https://talk.kontur.ru.evil.com/room1",
+      "https://meet.google.com.evil.com/abc",
+      "http://meet.google.com/abc-defg-hij",
+      "https://meet.google.com/",
+      "https://user:pw@meet.google.com/abc",
+      "не ссылка",
+      "",
+      null,
+      undefined,
+    ]
+  ) assertEquals(canInviteBot(bad), false, String(bad));
 });

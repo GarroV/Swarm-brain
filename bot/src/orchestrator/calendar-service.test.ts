@@ -67,7 +67,6 @@ function wire(start: () => Promise<string>) {
     log: (line) => {
       lines.push(line);
     },
-    intervalMs: 10_000,
     fetch: fetchStub,
   });
   return { trigger, seen, starts, notices, lines };
@@ -76,13 +75,14 @@ function wire(start: () => Promise<string>) {
 describe("calendarTriggerFor", () => {
   it("задание → бот за владельца календаря с ключом и началом события", async () => {
     const { trigger, seen, starts, notices } = wire(() => Promise.resolve("c1"));
-    await trigger.pollOnce();
+    await trigger.dispatch();
     expect(starts).toEqual([
       [
         JOB.join_url,
         "meet",
         PERSON,
         {
+          jobId: JOB.id,
           calendarKey: JOB.calendar_key,
           startsAt: JOB.starts_at,
           title: JOB.title,
@@ -98,7 +98,7 @@ describe("calendarTriggerFor", () => {
 
   it("контейнер не поднялся → календарная заявка за того же человека и join_failed", async () => {
     const { trigger, seen, notices } = wire(() => Promise.reject(new Error("docker down")));
-    await trigger.pollOnce();
+    await trigger.dispatch();
     const claim = seen.find((s) => s.url.endsWith("/meeting-claim"));
     expect(claim?.headers.get("X-On-Behalf-Of")).toBe(String(PERSON));
     // Заявка и отказ — по пропуску задания (T165), не общим токеном агента.
@@ -115,15 +115,5 @@ describe("calendarTriggerFor", () => {
     expect(notices[0]?.[2]).toBe(JOB.grant_token);
     expect(notices[0]?.[1]).toMatchObject({ kind: "join_failed", meetingId: "m-1" });
     expect(JSON.stringify(notices[0]?.[1])).toContain("docker down");
-  });
-
-  it("start/close: опрос идёт по кругу и останавливается, доведя идущий до конца", async () => {
-    const { trigger, seen } = wire(() => Promise.resolve("c1"));
-    trigger.start();
-    expect(() => {
-      trigger.start();
-    }).toThrow(/уже/u);
-    await trigger.close();
-    expect(seen.filter((s) => s.url.endsWith("/meeting-calendar"))).toHaveLength(1);
   });
 });

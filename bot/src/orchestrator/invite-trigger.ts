@@ -1,6 +1,6 @@
 /**
  * Вход «ручной запуск» (решение D017): человек вставил в вебе ссылку на созвон — сервер завёл
- * приглашение, этот цикл его забирает (`POST /meeting-invite`) и поднимает бота от имени
+ * приглашение; сигнал Swarm запускает его забор (`POST /meeting-invite`) и поднимает бота от имени
  * позвавшего. Основной путь — календарный (T100); этот — постоянный запасной (D015).
  *
  * Правило одно, и оно про тишину: приглашение, по которому бот не пошёл, обязано кончиться
@@ -10,20 +10,19 @@
  * прошедшее разбор, пишутся в журнал громко: сделать больше тут уже нечего.
  *
  * Одно приглашение не поднимает двух ботов: сервер отдаёт каждое один раз (условный UPDATE),
- * а цикл вдобавок помнит, что уже запускал, до срока приглашения — на случай, если сервер
+ * а обработчик вдобавок помнит, что уже запускал, до срока приглашения — на случай, если сервер
  * когда-нибудь отдаст его повторно.
  */
 import type { MeetingInvite } from "../swarm-client/contract.ts";
 import type { TakenInvites } from "../swarm-client/invites.ts";
 import { isSupportedPlatform } from "./config.ts";
 import { describeError } from "./describe-error.ts";
-import { PollLoop } from "./poll-loop.ts";
+import { RetryableWorkError } from "./work-delivery.ts";
 
 /**
  * Предел `detail` у `meeting-notice` (`MAX_DETAIL_CHARS` в `_shared/notices.ts`).
  */
 export const MAX_REFUSAL_DETAIL_CHARS = 300;
-const DEFAULT_INTERVAL_MS = 5000;
 
 const PLATFORM_NAMES: Readonly<Record<string, { en: string; ru: string }>> = {
   zoom: { en: "Zoom", ru: "Zoom" },
@@ -74,7 +73,7 @@ export interface InviteTriggerOptions {
   /**
    * Забрать ожидающие приглашения (`InviteClient.take`).
    */
-  readonly take: () => Promise<TakenInvites>;
+  readonly take: (id?: string) => Promise<TakenInvites>;
   /**
    * Поднять бота по приглашению; возвращает id контейнера.
    */
@@ -89,8 +88,8 @@ export interface InviteTriggerOptions {
    * висит живым до срока. Тогда отказ идёт тем же путём, что и «не поднялся».
    */
   readonly whenExited?: (containerId: string) => Promise<InviteContainerExit | undefined>;
+  readonly complete?: (id: string) => Promise<void>;
   readonly log: (line: string) => void;
-  readonly intervalMs?: number;
   readonly now?: () => number;
 }
 
@@ -102,17 +101,10 @@ export class InviteTrigger {
 
   private readonly watching = new Set<Promise<void>>();
 
-  private readonly loop: PollLoop;
-
   private readonly options: InviteTriggerOptions;
 
   constructor(options: InviteTriggerOptions) {
     this.options = options;
-    this.loop = new PollLoop(
-      "приглашения",
-      async () => this.pollOnce(),
-      options.intervalMs ?? DEFAULT_INTERVAL_MS,
-    );
   }
 
   private get nowMs(): number {
@@ -137,6 +129,7 @@ export class InviteTrigger {
       this.options.log(
         `ОТКАЗ НЕ ДОСТАВЛЕН по приглашению ${invite.id}: ${describeError(error)} — человек не узнает, что бот не придёт`,
       );
+      throw error;
     }
   }
 
@@ -145,23 +138,25 @@ export class InviteTrigger {
       this.options.log(`приглашение ${invite.id} пришло повторно — второго бота не поднимаю`);
       return;
     }
-    this.remembered.set(invite.id, Date.parse(invite.expires_at));
-
     if (!isSupportedPlatform(invite.platform)) {
       await this.refuse(invite, { kind: "platform", platform: invite.platform });
+      this.remembered.set(invite.id, Date.parse(invite.expires_at));
       return;
     }
     try {
       const id = await this.options.start(invite);
+      this.remembered.set(invite.id, Date.parse(invite.expires_at));
       this.options.log(
         `приглашение ${invite.id} (от ${String(invite.invited_by)}) → контейнер ${id}`,
       );
-      // Ждём в фоне: встреча длится часами, а цикл опроса стоять не должен.
+      // Ждём в фоне: встреча длится часами, HTTP-сигнал не должен ждать её окончания.
       const watched = this.watchEarlyDeath(invite, id);
       this.watching.add(watched);
       void watched.finally(() => this.watching.delete(watched));
     } catch (error) {
+      if (error instanceof RetryableWorkError) throw error;
       await this.refuse(invite, { kind: "start_failed", reason: describeError(error) });
+      this.remembered.set(invite.id, Date.parse(invite.expires_at));
     }
   }
 
@@ -178,7 +173,11 @@ export class InviteTrigger {
       return;
     }
     if (exit?.kind !== "died" || exit.meetingId !== null) return;
-    await this.refuse(invite, { kind: "died_before_claim", exitCode: exit.exitCode });
+    try {
+      await this.refuse(invite, { kind: "died_before_claim", exitCode: exit.exitCode });
+    } catch {
+      // The failed refusal is already logged; background exit observation must not reject.
+    }
   }
 
   /**
@@ -193,34 +192,23 @@ export class InviteTrigger {
   }
 
   /**
-   * Один опрос: забрать и разобрать всё забранное. Не бросает — сбой пишется в журнал.
+   * По сигналу забрать приглашение. Ошибка передаётся для повторной доставки.
    */
-  async pollOnce(): Promise<void> {
+  async dispatch(id?: string): Promise<void> {
     this.forget();
     let taken: TakenInvites;
     try {
-      taken = await this.options.take();
+      taken = await this.options.take(id);
     } catch (error) {
-      this.options.log(`опрос приглашений не удался: ${describeError(error)}`);
-      return;
+      this.options.log(`забор приглашения не удался: ${describeError(error)}`);
+      throw error;
     }
     for (const problem of taken.malformed) {
       this.options.log(`ПРИГЛАШЕНИЕ ПОТЕРЯНО (забрано, но не разобрано): ${problem}`);
     }
+    if (id !== undefined && taken.malformed.length > 0)
+      throw new Error("malformed targeted invite");
     for (const invite of taken.invites) await this.handle(invite);
-  }
-
-  /**
-   * Опрашивать по кругу (`PollLoop`).
-   */
-  start(): void {
-    this.loop.start();
-  }
-
-  /**
-   * Перестать опрашивать; идущий опрос доводится до конца — забранное не бросается.
-   */
-  async close(): Promise<void> {
-    await this.loop.close();
+    if (id !== undefined) await this.options.complete?.(id);
   }
 }

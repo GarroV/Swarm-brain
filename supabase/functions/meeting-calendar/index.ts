@@ -1,202 +1,82 @@
-// meeting-calendar — бот приходит на встречу сам, по календарю человека (T100, решения D015/D016).
-//
-// Оркестратор под токеном служебного агента зовёт этот эндпоинт раз в минуту. Сервер читает
-// Google-календари людей СВОЕГО воркспейса, включивших автозапуск (allowed_users.scriba_autojoin),
-// берёт встречи Google Meet и Контур.Толка (площадки бота, T111), начинающиеся в ближайшие минуты,
-// заводит задание (одно на встречу воркспейса, таблица meeting_calendar_jobs) и отдаёт оркестратору
-// ещё не забранные — каждое ровно один раз.
-// Выключивший автозапуск (переключатель в вебе, D021) теряет и заведённые, но не забранные задания —
-// sweep.ts гасит их на ближайшем опросе, до забора.
-//
-// К каждому заданию сервер выдаёт пропуск бота на эту встречу (`grant_token`, T165,
-// _shared/agent-grant.ts): за `invited_by` бот ходит только с ним. Бот заявляет встречу в
-// meeting-claim как `calendar` с `calendar_key` своего пропуска — и сервер сам сверяет, что встреча в
-// календаре этого человека, что он ответил «да» (D016, D024) и что автозапуск всё ещё включён (D021,
-// meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является. Пропуск не выдался —
-// задания возвращаются в очередь.
-//
-// Вместе с заданием сохраняется `notice_recipients` — участники из Swarm, принявшие встречу (у кого
-// подключён календарь — по их собственному календарю, у остальных — по ответу в событии запустившего,
-// _shared/notice-recipients.ts): им meeting-notice тоже шлёт нотисы бота (решение 12.11.2026). Миграцию с колонкой катить ДО функции.
-//
-// Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
-//   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
-//   no_conference_link · unsupported_platform · unrecognized_link · declined · not_accepted ·
-//   manual_invite_exists —
-//   у встречи. Список — _shared/calendar-dispatch.ts (SkipReason).
-//
-// Дверь — resolveServiceAgent: только токен агента, без подмены личности; люди сюда не проходят.
-//
-// POST, тело не читается.
-// 200 { ok: true, jobs: [{ id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at,
-//                         grant_token }],
-//       skipped: [{ invited_by, calendar_key, title, reason, platform? }] }
-// 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST · 500 сбой базы.
-//
-// Пропуски (бот не пойдёт / забрал задание и не дошёл) записываются в meeting_calendar_misses —
-// какие причины, решает _shared/calendar-missed.ts, запись — missed.ts; показывает их рекордер
-// человека через meeting-missed (T102, D022).
-//
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
-// Деплой: supabase functions deploy meeting-calendar --no-verify-jwt (бот хитит с Bearer-токеном).
-//
-// URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
+// meeting-calendar: targeted dequeue after a private Scriba signal. Planning belongs to
+// calendar-push; this endpoint only checks notice recipients for the one selected job.
+// Agent auth, one job reservation and its existing per-meeting grant remain the authority.
+// POST {id: uuid, started?: true}; started confirms a durably created Docker container.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveServiceAgent } from "../_shared/agent-auth.ts";
-import { accessToken, listEvents } from "../_shared/google-calendar.ts";
-import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
-import { recordSweepMisses } from "./missed.ts";
-import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
-import { makeOutcomeStore, recordOutcomes } from "../_shared/join-outcomes.ts";
-import { outcomesFromSkips } from "./outcomes.ts";
+import { acknowledgeSignalWork, parseWorkRequest, takeSignalWork } from "../_shared/scriba-work.ts";
+import type { TakenJob } from "./sweep.ts";
+import { prepareJobNotices } from "./notices.ts";
 import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
+import { roomOf } from "../_shared/calendar-dispatch.ts";
+import { reportCalendarSkips } from "../_shared/calendar-push-report.ts";
 
-const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-
-// Пропуски автозапуска (T102) пишутся в meeting_calendar_misses — их показывает рекордер человека.
-const missStore = makeMissStore(supabase);
-const outcomeStore = makeOutcomeStore(supabase);
-
-const JOB_COLUMNS = "id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at";
-
-function json(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
+const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
-}
-
-function fail(what: string, error: { message: string } | null): void {
-  if (error) throw new Error(`${what}: ${error.message}`);
-}
-
-const source: SweepSource = {
-  async autojoinPeople(groupId) {
-    const { data, error } = await supabase.from("allowed_users")
-      .select("telegram_id").eq("group_id", groupId).eq("scriba_autojoin", true).order("telegram_id");
-    fail("allowed_users", error);
-    return (data ?? []).map((r) => (r as { telegram_id: number }).telegram_id);
-  },
-  manualRooms: (groupId, nowMs) => loadCoveredRooms(supabase, groupId, nowMs),
-  async refreshToken(telegramId) {
-    const { data, error } = await supabase.from("user_integrations")
-      .select("api_key").eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();
-    fail("user_integrations", error);
-    return (data as { api_key?: string } | null)?.api_key ?? null;
-  },
-  accessToken,
-  listEvents,
-  async workspaceMembers(groupId) {
-    const { data, error } = await supabase.from("allowed_users").select("telegram_id, email").eq("group_id", groupId);
-    fail("allowed_users members", error);
-    return (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>;
-  },
-  async existingJobKeys(groupId, keys) {
-    const { data, error } = await supabase.from("meeting_calendar_jobs")
-      .select("calendar_key").eq("group_id", groupId).in("calendar_key", [...keys]);
-    fail("meeting_calendar_jobs existing", error);
-    return new Set(((data ?? []) as Array<{ calendar_key: string }>).map((r) => r.calendar_key));
-  },
-  async insertJobs(groupId, jobs) {
-    // Служебные поля отбора (почты) в строку не идут; `notice_recipients` посчитан в sweep.ts.
-    const rows = jobs.map(({ accepted_emails: _a, attendee_emails: _e, notice_recipients, ...job }) => ({
-      ...job,
-      group_id: groupId,
-      notice_recipients: notice_recipients ?? [],
-    }));
-    const { error } = await supabase.from("meeting_calendar_jobs")
-      .upsert(rows, {
-        onConflict: "group_id,calendar_key",
-        ignoreDuplicates: true,
-      });
-    fail("meeting_calendar_jobs insert", error);
-  },
-  async dropPendingJobsExcept(groupId, people) {
-    // Незабранное задание — служебная строка очереди, не запись человека: удаляем. Забранные
-    // (бот уже поднимается) не трогаются — условие taken_at is null.
-    let q = supabase.from("meeting_calendar_jobs").delete().eq("group_id", groupId).is("taken_at", null);
-    if (people.length > 0) q = q.not("invited_by", "in", `(${people.join(",")})`);
-    const { error } = await q;
-    fail("meeting_calendar_jobs drop", error);
-  },
-  async takeJobs(groupId, agentId, nowIso, people) {
-    if (people.length === 0) return [];
-    // Забор — один условный UPDATE (taken_at is null): два одновременных опроса одну строку не делят.
-    // Только задания тех, чьё согласие перечитано перед забором (D021).
-    const { data, error } = await supabase.from("meeting_calendar_jobs")
-      .update({ taken_at: nowIso, taken_by: agentId })
-      .eq("group_id", groupId).is("taken_at", null).gt("ends_at", nowIso).in("invited_by", [...people])
-      .select(JOB_COLUMNS);
-    fail("meeting_calendar_jobs take", error);
-    return ((data ?? []) as TakenJob[]).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  },
-};
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
-
+  if (req.method !== "POST") return json({ ok: false }, 405);
   let agent: { agentId: string; groupId: string };
   try {
-    agent = await resolveServiceAgent(supabase, req);
-  } catch (e) {
-    if (e instanceof AgentAuthError) return json({ ok: false, error: e.message }, e.status);
-    throw e;
+    agent = await resolveServiceAgent(db, req);
+  } catch (error) {
+    if (error instanceof AgentAuthError) return json({ ok: false, error: error.message }, error.status);
+    throw error;
   }
-
+  let body: { id: string; started: boolean };
   try {
-    const result = await sweep(source, agent, Date.now());
-    for (const s of result.skipped) {
-      console.warn(
-        `meeting-calendar: ${agent.groupId} ${s.invited_by} ${s.calendar_key ?? "—"} — бот не пойдёт: ${s.reason}`,
-      );
+    const text = await req.text();
+    if (text.length > 1024) return json({ ok: false }, 413);
+    body = parseWorkRequest(JSON.parse(text));
+  } catch {
+    return json({ ok: false }, 400);
+  }
+  try {
+    if (body.started) {
+      const acknowledged = await acknowledgeSignalWork(db, "calendar", body.id, agent);
+      return acknowledged ? json({ ok: true, terminal: true, jobs: [], skipped: [] }) : json({ ok: false }, 409);
     }
-    // Исходы «не пойдёт» — на сервер для статистики (#1244); не бросает, опрос не задерживает.
-    await recordOutcomes(
-      outcomeStore,
-      outcomesFromSkips(agent.groupId, result.skipped, Date.now()),
-      (l) => console.error(`meeting-calendar: ${l}`),
-    );
-    let tokens: string[];
-    try {
-      tokens = await mintGrants(
-        supabase,
-        result.jobs.map((j) => ({
-          agentId: agent.agentId,
-          groupId: agent.groupId,
-          telegramId: j.invited_by,
-          joinUrl: j.join_url,
-          calendarJobId: j.id,
-          calendarKey: j.calendar_key,
-          title: j.title,
-        })),
-        Date.now(),
-      );
-    } catch (e) {
-      // Задание без пропуска боту бесполезно: вернуть в очередь, следующий опрос заберёт снова.
-      console.error(`meeting-calendar: пропуска не выданы: ${e instanceof Error ? e.message : String(e)}`);
-      const { error: backErr } = await supabase.from("meeting_calendar_jobs")
-        .update({ taken_at: null, taken_by: null })
-        .in("id", result.jobs.map((j) => j.id))
-        .eq("taken_by", agent.agentId);
-      if (backErr) console.error(`meeting-calendar: задания не вернулись в очередь: ${backErr.message}`);
-      return json({ ok: false, error: "grant issue failed" }, 500);
+    const result = await takeSignalWork(db, "calendar", body.id, agent);
+    if (["missing", "started"].includes(result.state)) return json({ ok: true, terminal: true, jobs: [], skipped: [] });
+    if (result.state !== "taken" || !result.job) return json({ ok: false, error: result.state }, 409);
+    const job = result.job as unknown as TakenJob;
+    if ((await loadCoveredRooms(db, agent.groupId, Date.now())).has(roomOf(job.join_url))) {
+      await reportCalendarSkips(db, agent.groupId, [{
+        invited_by: job.invited_by,
+        calendar_key: job.calendar_key,
+        title: job.title,
+        starts_at: job.starts_at,
+        ends_at: job.ends_at,
+        reason: "manual_invite_exists",
+        platform: job.platform,
+      }]);
+      if (!await acknowledgeSignalWork(db, "calendar", body.id, agent)) return json({ ok: false }, 409);
+      return json({ ok: true, terminal: true, jobs: [], skipped: [] });
     }
-    const jobs = result.jobs.map((j, n) => ({ ...j, grant_token: tokens[n] }));
-    console.log(`meeting-calendar: агент ${agent.agentId} (${agent.groupId}) забрал ${result.jobs.length}`);
-    // Записать пропуски и недошедших ботов. Не бросает: задания боту важнее записи, а незаписанное
-    // повторится на следующем опросе.
-    const missed = await recordSweepMisses(
-      missStore,
-      agent.groupId,
-      result.skipped,
-      Date.now(),
-      (l) => console.warn(l),
-    );
-    if (missed.failed > 0) console.error(`meeting-calendar: пропуски записаны не все ${JSON.stringify(missed)}`);
-    return json({ ok: true, ...result, jobs });
-  } catch (e) {
-    console.error(`meeting-calendar: ${e instanceof Error ? e.message : String(e)}`);
-    return json({ ok: false, error: "calendar sweep failed" }, 500);
+    await prepareJobNotices(db, agent.groupId, agent.agentId, job);
+    const [token] = await mintGrants(db, [{
+      agentId: agent.agentId,
+      groupId: agent.groupId,
+      telegramId: job.invited_by,
+      joinUrl: job.join_url,
+      calendarJobId: job.id,
+      calendarKey: job.calendar_key,
+      title: job.title,
+    }], Date.now());
+    // Expose the established job contract only, never reservation/internal delivery columns.
+    const { id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at } = job;
+    return json({
+      ok: true,
+      jobs: [{ id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at, grant_token: token }],
+      skipped: [],
+    });
+  } catch {
+    console.error("meeting-calendar: targeted dequeue failed; delivery must retry");
+    return json({ ok: false, error: "calendar_dequeue_failed" }, 503);
   }
 });

@@ -19,6 +19,7 @@ export interface MeetingInvite {
   created_at: string;
   expires_at: string;
   meeting_id: string | null;
+  delivery_error?: "unconfirmed";
 }
 
 export type InviteErrorCode =
@@ -68,6 +69,7 @@ export function parseInviteResponse(body: unknown): MeetingInvite | null {
     created_at: r.created_at,
     expires_at: r.expires_at,
     meeting_id: (r.meeting_id as string | null | undefined) ?? null,
+    ...(r.delivery_error === "unconfirmed" ? { delivery_error: "unconfirmed" as const } : {}),
   };
 }
 
@@ -85,7 +87,7 @@ export function isFinalStatus(status: InviteStatus): boolean {
 
 type Dt = (ru: string, en: string) => string;
 
-export function inviteStatusLabel(status: InviteStatus, dt: Dt): string {
+export function inviteStatusLabel(status: InviteStatus, dt: Dt, deliveryError?: "unconfirmed"): string {
   switch (status) {
     case "pending":
       return dt("Ждёт бота", "Waiting for the bot");
@@ -94,6 +96,9 @@ export function inviteStatusLabel(status: InviteStatus, dt: Dt): string {
     case "used":
       return dt("Бот записывает", "The bot is recording");
     case "expired":
+      if (deliveryError === "unconfirmed") {
+        return dt("Истекло — бот не подтвердил приглашение", "Expired — the bot did not acknowledge the invite");
+      }
       return dt("Истекло — бот не пришёл", "Expired — the bot did not come");
   }
 }

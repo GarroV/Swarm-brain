@@ -157,7 +157,7 @@ function InviteForm({ s, autoFocus = false }: { s: InviteState; autoFocus?: bool
         <div role="status" className="mt-2 flex items-center gap-2" style={{ fontSize: 12 }}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${inv.status === "expired" ? "bg-line-2" : inv.status === "used" ? "bg-status-done" : "bg-status-prog"}`} aria-hidden />
           <span className={`min-w-0 flex-1 truncate ${inv.status === "expired" ? "text-ink-mute" : "text-ink-soft"}`}>
-            {inviteStatusLabel(inv.status, dt)}
+            {inviteStatusLabel(inv.status, dt, inv.delivery_error)}
           </span>
           {inv.status === "used" && inv.meeting_id && (
             <button type="button" onClick={() => push({ view: "meetingReview", params: { id: inv.meeting_id as string } })}

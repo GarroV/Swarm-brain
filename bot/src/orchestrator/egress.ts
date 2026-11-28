@@ -72,6 +72,10 @@ export interface DockerMeetingEgressOptions {
    */
   readonly swarmUrl: string;
   readonly extraTargets?: readonly string[];
+  /**
+   * Shared API network for the proxy only; meeting containers remain isolated.
+   */
+  readonly apiNetwork?: string;
   readonly log: (line: string) => void;
   readonly sleep?: (ms: number) => Promise<void>;
 }
@@ -102,7 +106,7 @@ export class DockerMeetingEgress implements MeetingEgress {
       `SCRIBA_EGRESS_PORT=${String(EGRESS_PORT)}`,
     ];
     this.config = createHash("sha256")
-      .update([options.image, ...this.env].join("\n"))
+      .update([options.image, options.apiNetwork ?? "", ...this.env].join("\n"))
       .digest("hex")
       .slice(0, 16);
   }
@@ -166,6 +170,8 @@ export class DockerMeetingEgress implements MeetingEgress {
       limits: PROXY_LIMITS,
     });
     try {
+      if (this.options.apiNetwork !== undefined)
+        await engine.connect(this.options.apiNetwork, id, "scriba-egress");
       await engine.start(id);
     } catch (error) {
       await engine.remove(id);

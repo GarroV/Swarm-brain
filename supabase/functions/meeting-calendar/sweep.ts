@@ -80,7 +80,9 @@ async function personPlan(
  * Свой календарь участника на окно встречи — для проверки «принял» (notice-recipients.ts).
  * `null` — календаря у человека нет; исключение — не удалось прочитать (человек нотису не получит).
  */
-function calendarsOf(source: SweepSource): CalendarAccess {
+type NoticeSource = Pick<SweepSource, "refreshToken" | "accessToken" | "listEvents" | "workspaceMembers">;
+
+function calendarsOf(source: NoticeSource): CalendarAccess {
   return {
     async ownEvents(telegramId, job) {
       const refresh = await source.refreshToken(telegramId);
@@ -98,8 +100,8 @@ function calendarsOf(source: SweepSource): CalendarAccess {
  * Получатели нотис бота (кроме запустившего) — принявшие встречу участники из Swarm, по каждому
  * заданию. Не прочиталось — пусто: нотиса уйдёт одному запустившему, а задание заведётся как обычно.
  */
-async function withNoticeRecipients(
-  source: SweepSource,
+export async function withNoticeRecipients(
+  source: NoticeSource,
   groupId: string,
   jobs: DispatchJob[],
 ): Promise<DispatchJob[]> {

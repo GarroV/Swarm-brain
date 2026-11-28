@@ -85,6 +85,7 @@ export interface InviteRow {
   taken_at: string | null;
   used_at: string | null;
   meeting_id: string | null;
+  started_at?: string | null;
 }
 
 export type InviteRefusal =

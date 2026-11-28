@@ -2,22 +2,9 @@
  * Смоук оркестратора: НАСТОЯЩИЙ Docker, настоящий образ, настоящие Chromium и ffmpeg в
  * контейнере; сервер — двойник `fake-swarm`, звонок — страница-двойник Meet.
  *
- * Что проверяет (мерило блока): контейнер поднимается на встречу, заходит, пишет звук,
- * отдаёт запись в meeting-ingest и гасится; смерть контейнера видна (код выхода, нотиса,
- * heartbeat замолкает на `recording: true`); после падения оркестратора (настоящий SIGKILL
- * процесса) сирот не остаётся, а новый оркестратор подхватывает живые контейнеры.
- * Ручной запуск по приглашению (D017) — сценарии invite, platform, race — гоняет НАСТОЯЩУЮ
- * службу `orchestrator-main.ts` дочерним процессом: приглашение забрано → контейнер → заявка
- * по приглашению → запись; Контур — громкий отказ; две службы не берут одно приглашение дважды.
- *
+ * Проверяет контейнер → запись → ingest, смерть, восстановление службы и сигналы заданий.
+ * Сценарии invite/platform/race проверяют настоящий дочерний процесс orchestrator-main.ts.
  * Живой вход в настоящую встречу Google сюда не входит — это T004 (нужен аккаунт и человек).
- *
- * Встречи запускаются с пропуском от двойника сервера (T165): `inviteBasis` заводит приглашение и
- * признаёт пропуск по нему — без пропуска контейнер не стартует.
- *
- * Запуск с хоста, образ собран заранее:
- *   docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/
- *   SCRIBA_SMOKE_STATE=<каталог> node bot/src/orchestrator/smoke-orchestrator.ts
  *
  * Переменные:
  *   SCRIBA_SMOKE_STATE    — каталог под поводки (обязателен: только свой, не общий tmp);
@@ -28,6 +15,8 @@
  *   SCRIBA_SMOKE_LISTEN   — адрес, на котором двойник сервера ждёт контейнеры (по умолчанию
  *                           127.0.0.1; смоук, запущенный сам в контейнере, — 0.0.0.0).
  */
+import { randomUUID } from "node:crypto";
+import { sendSmokeSignal, smokeSignalEnvironment } from "./smoke-signal.ts";
 import { spawn } from "node:child_process";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -573,6 +562,7 @@ async function ourLabels(): Promise<string[]> {
  */
 async function spawnService(leaseName: string, page: string): Promise<Service> {
   const lines: string[] = [];
+  const signalPort = PORT + (leaseName.endsWith("-b") ? 102 : 101);
   const service = spawn(process.execPath, [path.join(HERE, "orchestrator-main.ts")], {
     env: {
       ...process.env,
@@ -583,7 +573,7 @@ async function spawnService(leaseName: string, page: string): Promise<Service> {
       SCRIBA_PROJECT: PROJECT,
       SCRIBA_LEASE_HOST_DIR: path.join(STATE, leaseName),
       SCRIBA_BOT_VERSION: "1",
-      SCRIBA_INVITE_POLL_MS: "1000",
+      ...smokeSignalEnvironment(signalPort),
       SCRIBA_CONTAINER_ENV: JSON.stringify({ ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page }),
     },
     stdio: ["ignore", "pipe", "inherit"],
@@ -603,6 +593,7 @@ async function spawnService(leaseName: string, page: string): Promise<Service> {
   });
   return {
     lines,
+    signal: async (id) => sendSmokeSignal(signalPort, id),
     stop: async (): Promise<void> => {
       service.kill("SIGTERM");
       await within(30_000, `служба ${leaseName} остановлена`, exited);
@@ -625,7 +616,8 @@ async function sceneInvite(fake: Fake): Promise<void> {
   const service = await spawnService("lease-svc-a", SHORT_PAGE);
   const before = fake.ingested.length;
   try {
-    const invite = fake.addInvite({ joinUrl: MEET });
+    const invite = fake.addInvite({ id: randomUUID(), joinUrl: MEET });
+    await service.signal(invite.id);
     await until(20_000, "приглашение забрано", async () => {
       await sleep(0);
       return fake.inviteState(invite.id).taken || fake.inviteState(invite.id).used;
@@ -665,7 +657,12 @@ async function scenePlatform(fake: Fake): Promise<void> {
   );
   const service = await spawnService("lease-svc-a", SHORT_PAGE);
   try {
-    const invite = fake.addInvite({ joinUrl: "https://zoom.us/j/123", platform: "zoom" });
+    const invite = fake.addInvite({
+      id: randomUUID(),
+      joinUrl: "https://zoom.us/j/123",
+      platform: "zoom",
+    });
+    await service.signal(invite.id);
     await until(20_000, "отказ ушёл", async () => {
       await sleep(0);
       return noticesOf(fake, "join_failed").length > 0;
@@ -694,7 +691,10 @@ async function sceneRace(fake: Fake): Promise<void> {
   const right = await spawnService("lease-svc-b", SHORT_PAGE);
   const before = fake.ingested.length;
   try {
-    const invites = [1, 2, 3].map(() => fake.addInvite({ joinUrl: MEET }));
+    const invites = [1, 2, 3].map(() => fake.addInvite({ id: randomUUID(), joinUrl: MEET }));
+    await Promise.all(
+      invites.flatMap((invite) => [left.signal(invite.id), right.signal(invite.id)]),
+    );
     await until(180_000, "все три заявлены", async () => {
       await sleep(0);
       return invites.every((invite) => fake.inviteState(invite.id).used);

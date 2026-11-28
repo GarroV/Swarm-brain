@@ -9,15 +9,9 @@
  *     встречу сам), а на старте подхватывает живые контейнеры своего проекта и убирает
  *     остановленные.
  *
- * Heartbeat на сервер шлёт процесс встречи изнутри контейнера: сигнал «жив» идёт от того,
- * чья жизнь меряется, поэтому смерть контейнера обрывает его без участия оркестратора.
- *
- * Откуда приходит команда запуска — не забота этого класса: `startForMeeting` принимает
- * описание встречи и не знает, кто его прислал. Ручной запуск по приглашению из веба (D017)
- * зовёт его из `invite-trigger.ts` и передаёт приглашение — без него сервер ручную заявку
- * бота не примет.
  */
 import { randomUUID } from "node:crypto";
+import { deliverOnce, deliveryLabel, deliveryName } from "./work-delivery.ts";
 
 import {
   type ContainerLimits,
@@ -61,8 +55,6 @@ export type { ContainerId, ManagedMeeting, ContainerExit } from "./orchestrator-
 
 export { LABEL } from "./meeting-basis.ts";
 
-// Node исполняет TypeScript снятием типов (strip-only): код бота пишется без синтаксиса, который
-// требует трансформации, — это держит `erasableSyntaxOnly` в tsconfig (T148).
 const CONTAINER_COMMAND = ["node", "/app/src/orchestrator/container-main.ts"];
 const PROBE_COMMAND = ["node", "/app/src/orchestrator/probe-main.ts"];
 const PROBE_PLATFORM = "meet";
@@ -194,9 +186,6 @@ interface Managed {
   exited: Promise<void>;
 }
 
-/**
- * Переменные основания встречи для процесса в контейнере (`config.ts` читает их обратно).
- */
 /**
  * Куда контейнер встречи ходит наружу: браузер — флагом из `SCRIBA_EGRESS_PROXY`, node-клиент
  * Swarm — штатным прокси из окружения (`NODE_USE_ENV_PROXY`, Node ≥ 24.5). Мимо прокси пути нет:
@@ -366,7 +355,7 @@ export class Orchestrator {
     output: string | null,
   ): ContainerSpec {
     return {
-      name: `${this.options.project}-meeting-${runId}`,
+      name: deliveryName(this.options.project, runId, basis),
       image: this.options.image,
       command: CONTAINER_COMMAND,
       env: this.environment(
@@ -385,6 +374,7 @@ export class Orchestrator {
         [LABEL.onBehalfOf]: String(onBehalfOf),
         [LABEL.platform]: target.platform,
         ...basisLabel(basis),
+        ...deliveryLabel(basis),
         ...(isCalendarBasis(basis) && {
           [LABEL.calendarSlot]: calendarSlotKey(target.platform, target.joinUrl, basis.startsAt),
         }),
@@ -792,7 +782,16 @@ export class Orchestrator {
       ? calendarSlotKey(known, target.joinUrl, basis.startsAt)
       : null;
     return this.calendarSlots.start(slot, () =>
-      this.startMeeting(target, person, basis, grantToken),
+      deliverOnce({
+        engine: this.options.engine,
+        project: this.options.project,
+        person,
+        basis,
+        launch: () => this.startMeeting(target, person, basis, grantToken),
+        adopt: (container) => {
+          if (!this.running.has(container.id)) this.adopt(container);
+        },
+      }),
     );
   }
 
