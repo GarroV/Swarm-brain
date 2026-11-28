@@ -352,6 +352,7 @@ export function SprintBoard() {
         "The project and its subprojects will leave the board. Tasks and their project links are preserved; tasks remain in Tasks.",
       ),
       confirmText: dt("Архивировать проект", "Archive project"),
+      cancelText: dt("Отмена", "Cancel"),
     }))) return;
     setProjects((prev) => archiveProjectPreview(prev, id));
     try { await deleteProject(id); } catch { load(); }
