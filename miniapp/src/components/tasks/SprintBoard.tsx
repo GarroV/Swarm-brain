@@ -410,7 +410,7 @@ export function SprintBoard() {
     if (selected === ALL || deletingSprint) return;
     const sprint = sprints.find((s) => s.id === selected);
     if (!sprint) return;
-    if (!(await confirm({ title: copy.tabDeleteTitle(sprint.name), description: copy.tabDeleteDescription, confirmText: copy.tabDeleteAction }))) return;
+    if (!(await confirm({ title: copy.tabDeleteTitle(sprint.name), description: copy.tabDeleteDescription, confirmText: copy.tabDeleteAction, cancelText: copy.cancel }))) return;
     setDeletingSprint(true);
     try {
       const ids = tasks.filter((t) => t.sprint_id === selected).map((t) => t.id);
