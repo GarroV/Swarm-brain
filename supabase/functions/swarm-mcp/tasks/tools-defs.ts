@@ -291,9 +291,24 @@ export const COMMENT_TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "edit_task_comment",
+    description:
+      "Изменить текст СВОЕГО комментария к доступной задаче. Чужой комментарий изменить нельзя. id комментария печатается в get_task_comments. Уведомления о первоначальном комментарии повторно не отправляются.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "ID задачи — полный uuid" },
+        comment_id: { type: "string", description: "ID комментария из get_task_comments" },
+        content: { type: "string", description: "Новый полный текст комментария" },
+        requesting_user_id: { type: "number", description: "Заполняется из токена" },
+      },
+      required: ["task_id", "comment_id", "content"],
+    },
+  },
+  {
     name: "delete_task_comment",
     description:
-      "Удалить СВОЙ комментарий к задаче. Чужой удалить нельзя. Правки текста нет: чтобы исправить опечатку, удали комментарий и добавь заново. id комментария печатается в get_task_comments.",
+      "Удалить СВОЙ комментарий к задаче после подтверждения. Чужой удалить нельзя. Для исправления текста используй edit_task_comment. id комментария печатается в get_task_comments.",
     inputSchema: {
       type: "object",
       properties: {

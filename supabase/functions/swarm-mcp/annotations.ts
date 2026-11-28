@@ -64,6 +64,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   add_task: write(false),
   update_task: write(true),
   add_task_comment: write(false),
+  edit_task_comment: write(true),
   create_task_label: write(false),
   rename_task_label: write(true),
   set_task_subscription: write(true),
