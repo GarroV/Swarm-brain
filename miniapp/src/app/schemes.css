@@ -75,7 +75,7 @@
   --on-solid: #FBF7EE;
   color-scheme: light;
   --radius: 3px;
-  --font-display: var(--f-source-serif), "Golos Text", Georgia, serif;
+  --font-display: var(--f-source-serif), var(--font-golos), Georgia, serif;
 }
 
 .dark[data-scheme="redakciya"] {
@@ -235,7 +235,7 @@ html.dark[data-scheme="redakciya"][data-backdrop="custom"] {
   --on-solid: #F7F4EE;
   color-scheme: light;
   --radius: 6px;
-  --font-display: var(--f-oswald), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--f-oswald), var(--font-golos), system-ui, sans-serif;
 }
 
 .dark[data-scheme="nuar"] {
@@ -395,7 +395,7 @@ html.dark[data-scheme="nuar"][data-backdrop="custom"] {
   --on-solid: #FFFFFF;
   color-scheme: light;
   --radius: 8px;
-  --font-display: var(--f-space-grotesk), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--f-space-grotesk), var(--font-golos), system-ui, sans-serif;
 }
 
 .dark[data-scheme="grafit"] {
@@ -555,7 +555,7 @@ html.dark[data-scheme="grafit"][data-backdrop="custom"] {
   --on-solid: #FFFCF6;
   color-scheme: light;
   --radius: 18px;
-  --font-display: var(--f-fraunces), "Golos Text", Georgia, serif;
+  --font-display: var(--f-fraunces), var(--font-golos), Georgia, serif;
 }
 
 html[data-scheme="slivki"][data-backdrop="custom"] {
@@ -637,8 +637,8 @@ html[data-scheme="slivki"][data-backdrop="custom"] {
   --on-solid: #FFFFFF;
   color-scheme: light;
   --radius: 4px;
-  --font-sans: var(--f-atkinson), "Golos Text", system-ui, sans-serif;
-  --font-display: var(--f-atkinson), "Golos Text", system-ui, sans-serif;
+  --font-sans: var(--f-atkinson), var(--font-golos), system-ui, sans-serif;
+  --font-display: var(--f-atkinson), var(--font-golos), system-ui, sans-serif;
 }
 
 .dark[data-scheme="kontrast"] {

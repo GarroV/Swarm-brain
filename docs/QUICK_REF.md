@@ -584,3 +584,8 @@ deno test -A supabase/functions/_shared/tasks/sprint-closed-carry.test.ts
 - Транзакция и immutable originals: миграция `20261114120000_manual_meeting_confirmation.sql`, `manual_meeting_pair_decisions`, `meetings.manual_merge_target_id`. DELETE остаётся прежним; удалённые оригиналы через историю не открываются. История: GET `agent-meetings/:sourceId/manual-merge-versions/:decisionId`.
 - Происхождение transcript/микрофона: `_shared/meeting-transcript-origin{,-db}.ts`; только exact server-confirmed applied version. Автор/offset live-пометки относятся к её исходному `meeting_id`, не к началу целевой записи. Правило хранилища вынесено в `meeting-publish-visibility.ts`, прежний экспорт publisher сохранён.
 - Транзакционные регрессии/гонки: `_shared/manual-meeting-merge.db.test.ts` (изолированный CI); арбитраж/guards/публикация — соседние `manual-meeting-*.test.ts`. Реальные встречи/уведомления тестами не создаются.
+
+**Локальные шрифты (#1620):** все семейства интерфейса и анализа рынка загружаются
+через `next/font/local` из `miniapp/src/fonts/`. Файлы WOFF2 и OFL закреплены
+в репозитории; `manifest.json` хранит происхождение и SHA-256. Unicode-сабсеты
+собираются в прежние публичные CSS-переменные с исходными fallback-метриками.

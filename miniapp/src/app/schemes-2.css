@@ -66,7 +66,7 @@
   --on-solid: #FFFFFF;
   color-scheme: light;
   --radius: 14px;
-  --font-display: var(--f-manrope), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--f-manrope), var(--font-golos), system-ui, sans-serif;
 }
 
 .dark[data-scheme="laguna"] {
@@ -226,7 +226,7 @@ html.dark[data-scheme="laguna"][data-backdrop="custom"] {
   --on-solid: #FFFFFF;
   color-scheme: light;
   --radius: 12px;
-  --font-display: var(--f-sora), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--f-sora), var(--font-golos), system-ui, sans-serif;
 }
 
 .dark[data-scheme="sumerki"] {
@@ -469,7 +469,7 @@ html[data-scheme="terminal"][data-backdrop="custom"] {
   --on-solid: #0B2A5B;
   color-scheme: dark;
   --radius: 2px;
-  --font-sans: var(--f-plex-sans), "Golos Text", system-ui, sans-serif;
+  --font-sans: var(--f-plex-sans), var(--font-golos), system-ui, sans-serif;
   --font-display: var(--font-geist-mono), ui-monospace, Menlo, monospace;
 }
 
@@ -552,8 +552,8 @@ html[data-scheme="blyuprint"][data-backdrop="custom"] {
   --on-solid: #FFFFFF;
   color-scheme: light;
   --radius: 0px;
-  --font-sans: var(--f-inter-tight), "Golos Text", system-ui, sans-serif;
-  --font-display: var(--f-inter-tight), "Golos Text", system-ui, sans-serif;
+  --font-sans: var(--f-inter-tight), var(--font-golos), system-ui, sans-serif;
+  --font-display: var(--f-inter-tight), var(--font-golos), system-ui, sans-serif;
 }
 
 html[data-scheme="shveyc"][data-backdrop="custom"] {
