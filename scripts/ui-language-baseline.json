@@ -952,62 +952,6 @@
     "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
   },
   {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "jsx-text",
-    "text": "Загрузка…",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "children",
-    "text": "Проектов пока нет. Выберите вкладку сверху (или создайте) и добавьте в неё проект.",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "children",
-    "text": "В этой вкладке проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "placeholder",
-    "text": "Название проекта (напр. «Vibe Coding»)",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "jsx-text",
-    "text": "Добавить",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "jsx-text",
-    "text": "Отмена",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
-    "context": "jsx-text",
-    "text": "Проект",
-    "count": 1,
-    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
-  },
-  {
-    "file": "miniapp/src/components/tasks/TaskKanban.tsx",
-    "context": "placeholder",
-    "text": "Новая задача, Enter",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskKanban.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/tasks/TimelineView.tsx",
     "context": "jsx-text",
     "text": "Таймлайн",

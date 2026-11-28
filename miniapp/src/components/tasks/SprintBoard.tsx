@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
 import { MoveProjectMenu } from "./MoveProjectMenu";
 import { ProjectInfoPopover } from "./ProjectInfoPopover";
+import { PROJECT_BOARD_COPY } from "@/lib/projectBoardCopy";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
-import { useDt, useRoyNav } from "@/components/roy/nav";
+import { useDt, useRoyNav, useLang } from "@/components/roy/nav";
 import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
 import { useProjectDnd } from "@/components/tasks/projectDnd";
 import { isBacklogStatus, isWorkStatus } from "@/lib/boardStatus";
@@ -26,20 +27,16 @@ import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/t
 // 21.09.2026: «идеи не факт что у всех идеи»). Оттуда задачи тянутся в работу; это обычные
 // задачи, видимые в разделе «Задачи» наравне со всеми, а не отдельная сущность.
 const COLUMNS = [
-  { status: "backlog", label: "Бэклог задач", bar: "var(--status-open)" },
-  { status: "open", label: "Открыто", bar: "var(--ink-mute)" },
-  { status: "in_progress", label: "В работе", bar: "var(--status-prog)" },
-  { status: "done", label: "Готово", bar: "var(--status-done)" },
+  { status: "backlog", bar: "var(--status-open)" },
+  { status: "open", bar: "var(--ink-mute)" },
+  { status: "in_progress", bar: "var(--status-prog)" },
+  { status: "done", bar: "var(--status-done)" },
 ] as const;
 
-// Рабочие колонки пространства подпроекта (без бэклога — бэклог общий на проект, слева).
-const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
-
 /** Сводка справки «О проекте»: число задач по колонкам доски — те же статусы, что видно глазом. */
-function statusCounts(list: Task[], dt: (ru: string, en: string) => string) {
-  const EN: Record<string, string> = { backlog: "Backlog", open: "Open", in_progress: "In progress", done: "Done" };
-  return COLUMNS.map((c) => ({
-    label: dt(c.label, EN[c.status]),
+function statusCounts(list: Task[], columns: readonly KanbanColumnDef[]) {
+  return columns.map((c) => ({
+    label: c.label,
     count: list.filter((t) => (c.status === "backlog" ? isBacklogStatus(t.status) : t.status === c.status)).length,
   }));
 }
@@ -117,6 +114,9 @@ function PrivacyToggle({ isPrivate, inherited, onToggle, compact, label }: {
 export function SprintBoard() {
   const confirm = useConfirm();
   const dt = useDt();
+  const copy = PROJECT_BOARD_COPY[useLang()];
+  const columns = COLUMNS.map((column) => ({ ...column, label: copy.columns[column.status] }));
+  const workColumns = columns.filter((column) => column.status !== "backlog");
   const { me } = useRoyNav();
   const isAdmin = me?.is_admin ?? false;
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -388,7 +388,7 @@ export function SprintBoard() {
   }
 
   async function submitSprint() {
-    if (!form.name.trim()) { setFormErr("Введите название вкладки"); return; }
+    if (!form.name.trim()) { setFormErr(copy.tabNameRequired); return; }
     setSaving(true); setFormErr(null);
     // Вкладка — просто именованный фильтр; даты не нужны, но схема спринта их требует —
     // подставляем сегодняшнюю (пользователь их не видит).
@@ -402,7 +402,7 @@ export function SprintBoard() {
       });
       setForm({ name: "", start_date: "", end_date: "" }); setCreating(false);
       await load(); setSelected(created.id);
-    } catch (e) { setFormErr(e instanceof Error ? e.message : "Не удалось создать вкладку"); }
+    } catch (e) { setFormErr(e instanceof Error ? e.message : copy.tabCreateFailed); }
     finally { setSaving(false); }
   }
 
@@ -410,7 +410,7 @@ export function SprintBoard() {
     if (selected === ALL || deletingSprint) return;
     const sprint = sprints.find((s) => s.id === selected);
     if (!sprint) return;
-    if (!(await confirm({ title: `Удалить вкладку «${sprint.name}»?`, description: "Задачи из вкладки не удалятся — они просто выйдут из неё.", confirmText: "Удалить вкладку" }))) return;
+    if (!(await confirm({ title: copy.tabDeleteTitle(sprint.name), description: copy.tabDeleteDescription, confirmText: copy.tabDeleteAction }))) return;
     setDeletingSprint(true);
     try {
       const ids = tasks.filter((t) => t.sprint_id === selected).map((t) => t.id);
@@ -461,7 +461,7 @@ export function SprintBoard() {
   // в отдельном модуле, здесь остаются только действия над данными.
   const dnd = useProjectDnd(projects, { reorder: reorderProject, moveInto: moveSubproject });
 
-  if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
+  if (loading) return <p className="text-center text-ink-soft py-12 text-sm">{copy.loading}</p>;
 
   return (
     <div className="flex flex-col h-full">
@@ -515,8 +515,8 @@ export function SprintBoard() {
         {boardEmpty && (
           <p className="w-full text-center text-sm text-ink-soft/70 py-10">
             {selected === ALL
-              ? "Проектов пока нет. Выберите вкладку сверху (или создайте) и добавьте в неё проект."
-              : "В этой вкладке проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи."}
+              ? copy.emptyOverview
+              : copy.emptyTab}
           </p>
         )}
         {topLevel.map((sec) => {
@@ -584,7 +584,7 @@ export function SprintBoard() {
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
                 <ProjectInfoPopover project={sec} subprojectCount={kids.length}
-                  stats={statusCounts([...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)], dt)}
+                  stats={statusCounts([...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)], columns)}
                   onSave={(f) => saveProjectInfo(sec.id, f)} />
                 <span className="text-xs text-ink-soft">{total}</span>
                 {/* Добавить задачу (в каждой колонке уже есть свой «+», см. KanbanColumn в TaskKanban.tsx) и
@@ -614,14 +614,14 @@ export function SprintBoard() {
 
               {open && (kids.length === 0 ? (
                 <div>
-                  <TaskKanban sectionId={sec.id} columns={COLUMNS} tasks={secDirectTasks}
+                  <TaskKanban sectionId={sec.id} columns={columns} tasks={secDirectTasks}
                     tasksForColumn={boardColumnTasks} maxCards={BOARD_MAX_CARDS} kanban={kanban} />
                   {renderAddSubproject(sec.id)}
                 </div>
               ) : (
                 <div className="flex gap-3 p-3 overflow-x-auto">
                   {/* Общий бэклог проекта: backlog-задачи группы И подпроектов (с бейджем подпроекта). */}
-                  <KanbanColumn sectionId={sec.id} column={COLUMNS[0]}
+                  <KanbanColumn sectionId={sec.id} column={columns[0]}
                     tasks={[...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)].filter((t) => isBacklogStatus(t.status))}
                     badgeFor={(t) => (t.project_id !== sec.id ? kids.find((k) => k.id === t.project_id)?.name : undefined)}
                     maxCards={BOARD_MAX_CARDS} kanban={kanban} />
@@ -688,7 +688,7 @@ export function SprintBoard() {
                               className="flex gap-3 overflow-x-auto transition-opacity duration-200"
                               style={{ opacity: subOpen ? 1 : 0, transitionDelay: subOpen ? "120ms" : "0ms" }}
                             >
-                              {WORK_COLUMNS.map((col) => (
+                              {workColumns.map((col) => (
                                 <KanbanColumn key={col.status} sectionId={kid.id} column={col}
                                   tasks={kidTasks.filter((t) => t.status === col.status)} maxCards={BOARD_MAX_CARDS} kanban={kanban} />
                               ))}
@@ -715,14 +715,14 @@ export function SprintBoard() {
           <div className="flex items-center gap-2 max-w-sm">
             <input autoFocus value={sectionName} onChange={(e) => setSectionName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") addSection(); if (e.key === "Escape") setAddingSection(false); }}
-              placeholder="Название проекта (напр. «Vibe Coding»)"
+              placeholder={copy.projectPlaceholder}
               className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
-            <Button size="sm" className="h-9 text-xs" onClick={addSection}>Добавить</Button>
-            <button onClick={() => setAddingSection(false)} className="text-xs text-ink-soft px-2">Отмена</button>
+            <Button size="sm" className="h-9 text-xs" onClick={addSection}>{copy.add}</Button>
+            <button onClick={() => setAddingSection(false)} className="text-xs text-ink-soft px-2">{copy.cancel}</button>
           </div>
         ) : (
           <button onClick={() => setAddingSection(true)} className="flex items-center gap-1.5 rounded-full bg-surface border border-dashed border-line-2 px-4 py-2 text-xs font-semibold text-ink-soft hover:bg-surface-2">
-            <RoyIcon name="plus" size={14} strokeWidth={2} /> Проект
+            <RoyIcon name="plus" size={14} strokeWidth={2} /> {copy.project}
           </button>
         )}
         </div>

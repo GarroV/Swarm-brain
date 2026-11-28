@@ -2,7 +2,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Task } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
-import { useDt } from "@/components/roy/nav";
+import { PROJECT_BOARD_COPY } from "@/lib/projectBoardCopy";
+import { useDt, useLang } from "@/components/roy/nav";
 
 // Канбан по статусам — ОБЩИЙ компонент доски проектов и экрана спринта. До 09.09.2026 колонки,
 // DnD и карточка были вшиты в SprintBoard.tsx; спринту нужен тот же канбан, но с другим набором
@@ -101,6 +102,7 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
   kanban: KanbanHandlers;
 }) {
   const dt = useDt();
+  const copy = PROJECT_BOARD_COPY[useLang()];
   const listMaxHeight = useCardCapHeight(maxCards, tasks);
   const { drag, onDragChange, onDropTask, quickAdd, onQuickAddChange, onQuickAddSubmit, onOpenTask } = kanban;
   const adding = !readOnly && quickAdd?.section === sectionId && quickAdd?.status === column.status;
@@ -147,7 +149,7 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
           onChange={(e) => onQuickAddChange({ section: sectionId, status: column.status, title: e.target.value })}
           onKeyDown={(e) => { if (e.key === "Enter") onQuickAddSubmit(sectionId, column.status, quickAdd?.title ?? ""); if (e.key === "Escape") onQuickAddChange(null); }}
           onBlur={() => onQuickAddSubmit(sectionId, column.status, quickAdd?.title ?? "")}
-          placeholder="Новая задача, Enter"
+          placeholder={copy.quickAddPlaceholder}
           className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
       )}
       <div ref={listMaxHeight.ref} style={{ maxHeight: listMaxHeight.value }}
