@@ -3,7 +3,7 @@
  * за владельца календаря. Правило то же, что у приглашений (D017): не пойдёт —
  * громкий отказ или строка в журнал, а не молчание.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CalendarJob, CalendarSkip, CalendarSweep } from "./calendar-client.ts";
 import { CalendarTrigger } from "./calendar-trigger.ts";
@@ -223,5 +223,47 @@ describe("CalendarTrigger.dispatch", () => {
     await h.trigger.dispatch();
 
     expect(h.trigger.startedCount).toBe(2);
+  });
+});
+
+describe("terminal calendar signal", () => {
+  it("does not acknowledge a missing or already terminal job again", async () => {
+    let starts = 0;
+    let acknowledgements = 0;
+    const trigger = new CalendarTrigger({
+      sweep: () => Promise.resolve({ jobs: [], skipped: [], malformed: [] }),
+      start: () => {
+        starts++;
+        return Promise.resolve("unexpected");
+      },
+      refuse: () => Promise.reject(new Error("unexpected refusal")),
+      complete: () => {
+        acknowledgements++;
+        return Promise.reject(new Error("409 missing job"));
+      },
+      log: vi.fn(),
+    });
+    await trigger.dispatch("gone-job");
+    await trigger.dispatch("gone-job");
+    expect(starts).toBe(0);
+    expect(acknowledgements).toBe(0);
+  });
+  it("confirms a returned job after durable startup", async () => {
+    const events: string[] = [];
+    const trigger = new CalendarTrigger({
+      sweep: () => Promise.resolve(sweep({ jobs: [job()] })),
+      start: () => {
+        events.push("start");
+        return Promise.resolve("container");
+      },
+      refuse: () => Promise.reject(new Error("unexpected refusal")),
+      complete: (id) => {
+        events.push("ack:" + id);
+        return Promise.resolve();
+      },
+      log: vi.fn(),
+    });
+    await trigger.dispatch("job-1");
+    expect(events).toEqual(["start", "ack:job-1"]);
   });
 });

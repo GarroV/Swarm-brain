@@ -209,6 +209,6 @@ export class InviteTrigger {
     if (id !== undefined && taken.malformed.length > 0)
       throw new Error("malformed targeted invite");
     for (const invite of taken.invites) await this.handle(invite);
-    if (id !== undefined) await this.options.complete?.(id);
+    if (id !== undefined && taken.invites.length > 0) await this.options.complete?.(id);
   }
 }

@@ -1,6 +1,6 @@
 # Swarm Brain — Architecture
 
-## Доставка заданий Scriba без опроса (28.11.2026, подготовка)
+## Доставка заданий Scriba без опроса (28.11.2026)
 
 `meeting_invites` и `meeting_calendar_jobs` транзакционно создают сигналы в
 `scriba_signal_outbox`. `_shared/scriba-signals.ts` отправляет `{kind,id}`
@@ -23,7 +23,7 @@ Listener не публикует порт на хост. Общие конфиг
 вне git; cron вызывает только внутренние функции и только при due-работе.
 Карта файлов и приёмка: [порядок выпуска](reference/2026-11-28-scriba-push-rollout.md),
 [решение](decisions/2026-11-28-scriba-push.md). Описание старого polling ниже
-заменено этой схемой; production на момент подготовки ещё не переключён.
+заменено этой схемой; production переключён 28.11.2026.
 
 **Подсказки подключения (#1544):** `supabase/functions/_shared/setup-help.ts` хранит
 RU/EN-каталог по существующей схеме `NoticeLang`. Бот, MCP и ошибки установщика
