@@ -164,12 +164,23 @@ Deno.test("схемы: список в me-fields.ts (PATCH /me) совпадае
   assertEquals(server, [...SCHEME_IDS]);
 });
 
-Deno.test("схемы: у каждой схемы шрифты — переменные, объявленные в layout.tsx", () => {
+Deno.test("схемы: цепочки локальных шрифтов подключены в корневом layout", () => {
   const layout = read("../app/layout.tsx");
-  const declared = new Set([...layout.matchAll(/variable: "(--f-[\w-]+)"/g)].map((m) => m[1]));
-  const used = new Set([...SCHEMES_CSS.matchAll(/var\((--f-[\w-]+)\)/g)].map((m) => m[1]));
+  assert(layout.includes('import "../fonts/fallbacks.css";'));
+  assert(layout.includes('import { interfaceFontVariables } from "../fonts/interface";'));
+  assert(layout.includes('className={interfaceFontVariables}'));
+  const registry = read("../fonts/interface.ts");
+  const fontModules = [...registry.matchAll(/from "\.\/([\w-]+)"/g)].map((m) => read(`../fonts/${m[1]}.ts`)).join("\n");
+  const declared = new Set([...fontModules.matchAll(/variable: "(--local-[\w-]+)"/g)].map((m) => m[1]));
+  const aliases = parseBlocks(read("../fonts/fallbacks.css")).get(":root")!;
+  const used = new Set([...SCHEMES_CSS.matchAll(/var\((--(?:f-[\w-]+|font-golos))\)/g)].map((m) => m[1]));
   assert(used.size > 0);
-  for (const v of used) assert(declared.has(v), `${v} используется в schemes.css, но не объявлен в layout.tsx`);
+  for (const v of used) {
+    assert(aliases.has(v), `${v} используется в schemes.css, но не объявлен в корневом CSS шрифтов`);
+    const refs = [...aliases.get(v)!.matchAll(/var\((--local-[\w-]+)\)/g)].map((m) => m[1]);
+    assert(refs.length > 0, `${v}: нет цепочки локальных шрифтов`);
+    for (const ref of refs) assert(declared.has(ref), `${v}: ${ref} не объявлен в подключённых localFont-модулях`);
+  }
 });
 
 Deno.test("скрипт первой отрисовки: схема с одним режимом навязывает его, без выбора — как в системе", () => {
