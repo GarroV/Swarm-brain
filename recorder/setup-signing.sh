@@ -8,8 +8,8 @@
 #
 # ВАЖНО (масштабирование на команду): cert НЕ нужно ДОВЕРЯТЬ. `codesign -s` подписывает и
 # недоверенным self-signed cert'ом (проверено), а локально собранный (не карантиненный) .app
-# Gatekeeper не блокирует. Поэтому здесь НЕТ add-trusted-cert / sudo / GUI-запроса пароля —
-# шаг полностью НЕИНТЕРАКТИВНЫЙ и детерминированный на любой машине.
+# Gatekeeper не блокирует. Здесь нет add-trusted-cert / sudo; при первом добавлении
+# сертификата macOS может запросить пароль от Mac для связки ключей.
 #
 # Идемпотентно: если identity уже в keychain — выходим сразу.
 set -euo pipefail
@@ -35,7 +35,7 @@ if [ ! -f "$KEYCHAIN" ]; then
   exit 1
 fi
 
-echo "[signing] создаю self-signed code-signing cert \"$IDENTITY\" (без доверия и пароля)..."
+echo "[signing] создаю self-signed code-signing cert \"$IDENTITY\" (доверие не требуется)..."
 
 TMP="$(mktemp -d)"
 cleanup() { rm -f "$TMP/cs.key" "$TMP/cs.crt" "$TMP/cs.p12" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true; }
@@ -56,7 +56,8 @@ P12="$TMP/cs.p12"
 "$OPENSSL" pkcs12 -export -inkey "$KEY" -in "$CRT" -out "$P12" \
   -passout pass:temp -name "$IDENTITY"
 
-# ── 3. Импорт в login keychain + ACL-доступ для codesign (чтобы подпись не просила пароль) ──
+# ── 3. Импорт в login keychain + ACL-доступ для codesign ────────────────────────
+echo "[signing] добавляю сертификат в связку ключей. Если macOS запросит пароль от Mac, подтверди системный запрос."
 security import "$P12" -k "$KEYCHAIN" -P temp -T /usr/bin/codesign
 
 # ── 4. Проверка: identity видна для codesigning (без -v — доверие не требуется) ──────

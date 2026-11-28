@@ -44,7 +44,9 @@ die()  { printf '\\n❌ %s\\n' "$*" >&2; [ -n "\${TMP:-}" ] && rm -rf "$TMP"; ex
 say "🎙  Swarm Brain → bumblebee"
 say ""
 say "Что произойдёт: скачается готовое приложение (~1 МБ), локально подпишется и поставится в"
-say "/Applications с уже прописанным токеном. БЕЗ Xcode, без сборки, без пароля."
+say "/Applications с уже прописанным токеном. Без Xcode и без сборки."
+say "При первом добавлении сертификата macOS может один раз запросить пароль от Mac."
+say "Это обычный системный запрос для добавления сертификата в связку ключей."
 say "В конце выдашь ОДНО разрешение на запись звука в System Settings."
 say ""
 
@@ -116,7 +118,7 @@ say "✓ Приложение получено"
 # ── 3. Снимаю карантин (иначе Gatekeeper заблокирует скачанное) ──────────────────
 xattr -dr com.apple.quarantine "$APP_SRC" 2>/dev/null || true
 
-# ── 4. Стабильный per-machine cert (штатные openssl+security, БЕЗ CLT/пароля) ────
+# ── 4. Стабильный per-machine cert (штатные openssl+security, БЕЗ CLT) ───────────
 # TCC привязывает разрешение к designated requirement (identifier + certificate leaf), не к cdhash.
 # Один и тот же cert → DR стабилен → «System Audio Recording» выдаётся один раз и держится.
 ensure_cert() {
@@ -126,7 +128,7 @@ ensure_cert() {
   fi
   [ -x "$OPENSSL" ] || die "Нет системного openssl ($OPENSSL)."
   [ -f "$KEYCHAIN" ] || die "Не найден login keychain ($KEYCHAIN)."
-  say "→ Создаю сертификат подписи (без доверия и пароля)…"
+  say "→ Создаю локальный сертификат подписи…"
   local ck cc cp12
   ck="$TMP/cs.key"; cc="$TMP/cs.crt"; cp12="$TMP/cs.p12"
   "$OPENSSL" req -x509 -newkey rsa:2048 -keyout "$ck" -out "$cc" -days 3650 -nodes \\
@@ -136,6 +138,7 @@ ensure_cert() {
     -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1 || die "Не удалось создать сертификат (openssl)."
   "$OPENSSL" pkcs12 -export -inkey "$ck" -in "$cc" -out "$cp12" -passout pass:temp -name "$IDENTITY" >/dev/null 2>&1 \\
     || die "Не удалось упаковать сертификат (p12)."
+  say "→ Добавляю сертификат в связку ключей. Если macOS запросит пароль от Mac, подтверди системный запрос."
   security import "$cp12" -k "$KEYCHAIN" -P temp -T /usr/bin/codesign >/dev/null 2>&1 \\
     || die "Не удалось импортировать сертификат в keychain."
   rm -f "$ck" "$cc" "$cp12" 2>/dev/null || true
