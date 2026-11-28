@@ -1,13 +1,7 @@
 /**
- * Клиент `POST /meeting-calendar` (T100): сервер читает календари людей воркспейса, включивших
- * автозапуск, заводит задания на ближайшие встречи Meet и отдаёт оркестратору ещё не забранные —
- * каждое один раз. Всё, на что бот не пойдёт, приходит в `skipped` с причиной.
- *
- * Дверь та же, что у `meeting-invite`: только токен агента, без `X-On-Behalf-Of`. Повторов нет
- * намеренно — забранное задание повтор не вернёт, а следующий опрос придёт через минуту.
- *
- * Имена полей — snake_case, как на проводе; сверку с сервером держит `calendar-client.test.ts`
- * (читает `supabase/functions/meeting-calendar/index.ts`).
+ * Клиент `POST /meeting-calendar`: по внутреннему сигналу забирает одно готовое задание
+ * своего воркспейса с grant_token; {id,started:true} подтверждает успешный запуск.
+ * Ни сканирования Google, ни фонового опроса клиент не выполняет.
  */
 import {
   parseRetryAfterMs,
@@ -161,15 +155,23 @@ export class CalendarClient {
   }
 
   /**
-   * Один проход по календарям воркспейса. Забранное другим уже не вернётся.
+   * Забрать указанное готовое задание либо подтвердить его запуск.
    */
-  async sweep(): Promise<CalendarSweep> {
+  async sweep(id?: string, hasStarted = false): Promise<CalendarSweep> {
     let response: Response;
     try {
       response = await this.doFetch(this.url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.config.token}` },
-        signal: AbortSignal.timeout(this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        headers: {
+          Authorization: `Bearer ${this.config.token}`,
+          "Content-Type": "application/json",
+        },
+        ...(id !== undefined && {
+          body: JSON.stringify({ id, ...(hasStarted && { started: true }) }),
+        }),
+        signal: AbortSignal.timeout(
+          this.config.timeoutMs ?? (hasStarted ? 8000 : DEFAULT_TIMEOUT_MS),
+        ),
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

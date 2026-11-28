@@ -92,7 +92,7 @@ export function InviteBotInline({ meetingId, joinUrl }: { meetingId: string; joi
   };
 
   if (invite) {
-    const text = inviteStatusLabel(invite.status, dt);
+    const text = inviteStatusLabel(invite.status, dt, invite.delivery_error);
     return (
       <span role="status" title={text} onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-ink-mute" style={{ fontSize: 11, maxWidth: 150 }}>
         {text}

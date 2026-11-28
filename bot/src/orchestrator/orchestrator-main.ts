@@ -1,7 +1,7 @@
 /**
  * Служба оркестратора: долгоживущий процесс рядом с Docker. Поднимает поводок, подхватывает
- * контейнеры прошлого запуска, каждые 45 с берёт задания по календарям людей (T100) и опрашивает
- * приглашения из веба (D017) — по каждому поднимает бота от имени человека, а на площадку без
+ * контейнеры прошлого запуска и получает внутренние сигналы о заданиях календаря (T100) и
+ * приглашениях из веба (D017) — по каждому поднимает бота от имени человека, а на площадку без
  * адаптера отвечает громким отказом.
  *
  * Запуск (внутри WSL2 рядом с Docker):
@@ -16,8 +16,9 @@
  *                                 журнал встречи не сохраняется (контейнер удаляется вместе с ним);
  *   SCRIBA_PROJECT              — имя стенда, метка контейнеров и томов (по умолчанию scriba);
  *   SCRIBA_BOT_VERSION          — номер сборки, уходит в heartbeat и заявку (по умолчанию 0);
- *   SCRIBA_INVITE_POLL_MS       — пауза между опросами приглашений (по умолчанию 5000);
- *   SCRIBA_CALENDAR_POLL_MS     — пауза между проходами по календарям (по умолчанию 45000, #1000);
+ *   SCRIBA_SIGNAL_SECRET        — общий секрет внутренних сигналов Swarm (обязательно, ≥32 символа);
+ *   SCRIBA_SIGNAL_HOST/PORT     — адрес внутреннего listener (по умолчанию 0.0.0.0:8091);
+ *   SCRIBA_API_NETWORK          — общая сеть API только для egress proxy, не контейнеров встреч;
  *   SCRIBA_CONTAINER_SWARM_URL  — корень функций, каким его видит контейнер (по умолчанию
  *                                 SCRIBA_SWARM_URL; для стенда — host.docker.internal);
  *   SCRIBA_CONTAINER_ENV        — JSON-объект добавочного окружения контейнера (ручки смоука);
@@ -61,7 +62,7 @@ import { type AccountCopies, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { DockerMeetingEgress } from "./egress.ts";
 import { calendarTriggerFor } from "./calendar-service.ts";
-import { DEFAULT_INTERVAL_MS as CALENDAR_POLL_DEFAULT_MS } from "./calendar-trigger.ts";
+import { signalServer } from "./signal-server.ts";
 import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
@@ -194,6 +195,11 @@ async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
   const version = positive(environment, "SCRIBA_BOT_VERSION", 0);
+  const signalSecret = required(environment, "SCRIBA_SIGNAL_SECRET");
+  if (signalSecret.length < 32)
+    throw new Error("SCRIBA_SIGNAL_SECRET must contain at least 32 characters");
+  const signalPort = positive(environment, "SCRIBA_SIGNAL_PORT", 8091);
+  if (signalPort < 1 || signalPort > 65_535) throw new Error("SCRIBA_SIGNAL_PORT must be 1–65535");
   // Нотиса за человека — по пропуску его встречи (T165); общий токен сервер за человека не принимает.
   const notifierFor = (onBehalfOf: number, grant: string): Notifier =>
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
@@ -209,11 +215,13 @@ async function main(environment: Environment): Promise<void> {
   const project = nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba";
   const image = required(environment, "SCRIBA_IMAGE");
   const containerSwarmUrl = nonEmpty(environment.SCRIBA_CONTAINER_SWARM_URL) ?? swarmUrl;
+  const apiNetwork = nonEmpty(environment.SCRIBA_API_NETWORK);
   const egress = new DockerMeetingEgress({
     engine,
     project,
     image,
     swarmUrl: containerSwarmUrl,
+    ...(apiNetwork !== undefined && { apiNetwork }),
     extraTargets: (environment.SCRIBA_EGRESS_EXTRA ?? "")
       .split(",")
       .map((item) => item.trim())
@@ -239,7 +247,6 @@ async function main(environment: Environment): Promise<void> {
     ...(alertOwner !== undefined && { alertOwner }),
     ...(account !== undefined && keepalive !== undefined && { loginKeepalive: keepalive }),
   });
-  const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({
     swarmUrl,
     token,
@@ -249,10 +256,8 @@ async function main(environment: Environment): Promise<void> {
     whenExited: async (id) => orchestrator.whenExited(id),
     notifierFor,
     log,
-    intervalMs,
   });
 
-  const calendarMs = positive(environment, "SCRIBA_CALENDAR_POLL_MS", CALENDAR_POLL_DEFAULT_MS);
   const calendar = calendarTriggerFor({
     swarmUrl,
     token,
@@ -261,7 +266,6 @@ async function main(environment: Environment): Promise<void> {
       orchestrator.startForMeeting(joinUrl, platform, onBehalfOf, event),
     notifierFor,
     log,
-    intervalMs: calendarMs,
   });
 
   const recovery = uploadRecoveryService(
@@ -270,17 +274,32 @@ async function main(environment: Environment): Promise<void> {
   );
 
   await orchestrator.init();
-  await orchestrator.startLoginKeepalive();
-  trigger.start();
-  calendar.start();
+  let signals: Awaited<ReturnType<typeof signalServer>>;
+  try {
+    await orchestrator.startLoginKeepalive();
+    signals = await signalServer({
+      secret: signalSecret,
+      host: nonEmpty(environment.SCRIBA_SIGNAL_HOST) ?? "0.0.0.0",
+      port: signalPort,
+      log,
+      dispatch: async (signal) => {
+        await (signal.kind === "invite"
+          ? trigger.dispatch(signal.id)
+          : calendar.dispatch(signal.id));
+      },
+    });
+  } catch (error) {
+    orchestrator.close();
+    throw error;
+  }
   recovery.start();
   log(
-    `служба запущена: приглашения опрашиваются каждые ${String(intervalMs)} мс, календари — каждые ${String(calendarMs)} мс`,
+    `служба запущена: приглашения и календарные задания принимаются внутренними сигналами на порту ${String(signalPort)}`,
   );
 
   const shutdown = async (signal: string): Promise<void> => {
-    log(`${signal}: перестаю опрашивать; идущие встречи не трогаю — поводок их отпустит`);
-    await Promise.all([trigger.close(), calendar.close(), recovery.close()]);
+    log(`${signal}: перестаю принимать сигналы; идущие встречи не трогаю — поводок их отпустит`);
+    await Promise.all([signals.close(), recovery.close()]);
     orchestrator.close();
     // eslint-disable-next-line unicorn/no-process-exit -- служба и есть CLI
     process.exit(0);

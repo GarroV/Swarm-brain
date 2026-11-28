@@ -89,6 +89,48 @@ function egressOn(engine: FakeEgressEngine, swarmUrl = "https://abc.supabase.co/
 }
 
 describe("сеть встречи и egress-прокси", () => {
+  it("общую сеть API получает только прокси перед стартом", async () => {
+    const engine = new FakeEgressEngine();
+    const egress = new DockerMeetingEgress({
+      engine,
+      project: "stand",
+      image: "scriba:dev",
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- Internal Docker API transport is intentionally HTTP.
+      swarmUrl: "http://supabase-envoy:8000/functions/v1",
+      apiNetwork: "swarm_default",
+      log: () => {
+        // Quiet test.
+      },
+    });
+    await egress.prepare("r1");
+    expect(engine.calls.indexOf("connect:swarm_default:p1:scriba-egress")).toBeLessThan(
+      engine.calls.indexOf("start:p1"),
+    );
+    expect(engine.networks.map((network) => network.name)).toEqual(["stand-meeting-r1"]);
+    expect(engine.calls.filter((call) => call.includes("swarm_default"))).toEqual([
+      "connect:swarm_default:p1:scriba-egress",
+    ]);
+  });
+
+  it("ошибка подключения прокси к API не скрывается и не оставляет прокси", async () => {
+    const engine = new FakeEgressEngine();
+    engine.shouldFailConnect = true;
+    const egress = new DockerMeetingEgress({
+      engine,
+      project: "stand",
+      image: "scriba:dev",
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- Internal Docker API transport is intentionally HTTP.
+      swarmUrl: "http://supabase-envoy:8000/functions/v1",
+      apiNetwork: "swarm_default",
+      log: () => {
+        // Quiet test.
+      },
+    });
+    await expect(egress.prepare("r1")).rejects.toThrow("egress-прокси не стартовал");
+    expect(engine.containers).toEqual([]);
+    expect(engine.networks).toEqual([]);
+  });
+
   it("встреча получает свою internal-сеть, к ней подключён прокси, адрес прокси — по имени", async () => {
     const engine = new FakeEgressEngine();
     const { egress } = egressOn(engine);

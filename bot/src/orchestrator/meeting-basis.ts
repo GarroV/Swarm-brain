@@ -3,6 +3,7 @@ import { MEETING_ENV } from "./config.ts";
 
 export const LABEL = {
   project: "scriba.project",
+  delivery: "scriba.delivery",
   run: "scriba.run",
   onBehalfOf: "scriba.on-behalf-of",
   platform: "scriba.platform",

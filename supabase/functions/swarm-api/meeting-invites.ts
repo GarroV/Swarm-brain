@@ -25,11 +25,13 @@ import {
 } from "../_shared/meeting-invite.ts";
 import { json } from "./http.ts";
 import { serverError } from "./client-error.ts";
+import { kickScribaSignal } from "../_shared/scriba-signals.ts";
 
 /** Сколько живых приглашений держит один человек: больше — это уже рассылка бота по ссылкам. */
 export const MAX_ACTIVE_INVITES = 3;
 
-const COLUMNS = "id, group_id, invited_by, join_url, platform, created_at, expires_at, taken_at, used_at, meeting_id";
+const COLUMNS =
+  "id, group_id, invited_by, join_url, platform, created_at, expires_at, taken_at, used_at, meeting_id, started_at";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ERRORS = {
@@ -69,11 +71,13 @@ function inviteErr(code: ErrorCode, origin: string): Response {
 }
 
 function view(row: InviteRow, nowMs: number) {
+  const status = inviteStatus(row, nowMs);
   return {
     id: row.id,
     join_url: row.join_url,
     platform: row.platform,
-    status: inviteStatus(row, nowMs),
+    status,
+    ...(status === "expired" && row.started_at === null ? { delivery_error: "unconfirmed" } : {}),
     created_at: row.created_at,
     expires_at: row.expires_at,
     meeting_id: row.meeting_id,
@@ -139,6 +143,7 @@ async function createInvite(ctx: InviteContext, req: Request): Promise<Response>
     .single();
   if (error || !data) return serverError(ctx.origin, "meeting invite create", error ?? "no row returned");
   console.log(`swarm-api: приглашение ${(data as InviteRow).id} от ${ctx.telegramId} (${link.platform})`);
+  await kickScribaSignal(ctx.supabase, "invite", (data as InviteRow).id);
   return json({ invite: view(data as InviteRow, nowMs) }, 201, ctx.origin);
 }
 

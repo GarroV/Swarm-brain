@@ -65,7 +65,6 @@ export interface InviteServiceOptions {
   */
   readonly whenExited?: InviteTriggerOptions["whenExited"];
   readonly log: (line: string) => void;
-  readonly intervalMs?: number;
   readonly fetch?: typeof globalThis.fetch;
 }
 
@@ -76,7 +75,10 @@ export function inviteTriggerFor(options: InviteServiceOptions): InviteTrigger {
     ...(options.fetch !== undefined && { fetch: options.fetch }),
   });
   return new InviteTrigger({
-    take: async () => invites.take(),
+    take: async (id) => invites.take(undefined, id),
+    complete: async (id) => {
+      await invites.take(undefined, id, true);
+    },
     ...(options.whenExited !== undefined && { whenExited: options.whenExited }),
     start: async (invite) =>
       options.startForMeeting(invite.join_url, invite.platform, invite.invited_by, {
@@ -106,6 +108,5 @@ export function inviteTriggerFor(options: InviteServiceOptions): InviteTrigger {
       );
     },
     log: options.log,
-    ...(options.intervalMs !== undefined && { intervalMs: options.intervalMs }),
   });
 }

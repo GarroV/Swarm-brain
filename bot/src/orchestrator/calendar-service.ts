@@ -24,12 +24,12 @@ export interface CalendarServiceOptions {
   ) => Promise<string>;
   readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
   readonly log: (line: string) => void;
-  readonly intervalMs?: number;
   readonly fetch?: typeof globalThis.fetch;
 }
 
 function referenceOf(job: CalendarJob): CalendarReference {
   return {
+    jobId: job.id,
     calendarKey: job.calendar_key,
     startsAt: job.starts_at,
     ...(job.title !== null && job.title.trim() !== "" && { title: job.title }),
@@ -44,7 +44,10 @@ export function calendarTriggerFor(options: CalendarServiceOptions): CalendarTri
     ...(options.fetch !== undefined && { fetch: options.fetch }),
   });
   return new CalendarTrigger({
-    sweep: async () => calendar.sweep(),
+    sweep: async (id) => calendar.sweep(id),
+    complete: async (id) => {
+      await calendar.sweep(id, true);
+    },
     start: async (job) =>
       options.startForMeeting(job.join_url, job.platform, job.invited_by, referenceOf(job)),
     // Нотисе `join_failed` нужна строка встречи — её заводит только `meeting-claim`, поэтому
@@ -68,6 +71,5 @@ export function calendarTriggerFor(options: CalendarServiceOptions): CalendarTri
       });
     },
     log: options.log,
-    ...(options.intervalMs !== undefined && { intervalMs: options.intervalMs }),
   });
 }

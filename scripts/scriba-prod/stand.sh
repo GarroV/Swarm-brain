@@ -13,8 +13,8 @@
 #   down       — погасить оркестратор и встречи; токен и вход не трогать
 #
 # Своё на общей площадке: папка /srv/scriba (repo — клон main, state — данные вне git, account —
-# вход Google-аккаунта бота), compose-проект scriba-prod, контейнеры scriba-prod-*. Портов нет:
-# бот сам ходит в Swarm, входящих соединений не ждёт. Чужое не трогаем.
+# вход Google-аккаунта бота), compose-проект scriba-prod, контейнеры scriba-prod-*. Портов наружу
+# нет: входящие сигналы доступны только общей Docker-сети Swarm. Чужое не трогаем.
 # Токен не покидает эту машину: наружу уходит только хеш, по нему прод узнаёт бота.
 set -euo pipefail
 
@@ -28,8 +28,10 @@ ENV_FILE="$STATE/prod.env"
 ALERT_CHANNEL_CONTAINER=furca-channel-bot-1
 ALERT_CHANNEL_NETWORK=furca-channel_default
 TOKEN_FILE="$STATE/bot.token"
+SIGNAL_SECRET_FILE="$STATE/signal.secret"
 PROJECT=scriba-prod
-SWARM_URL='https://api.swarm-team.app/functions/v1'
+SWARM_URL='http://supabase-envoy:8000/functions/v1'
+API_NETWORK=swarm_default
 # VPS общий: встреча берёт до 2 ГБ и 2 ядер, четыре сразу задушили бы соседей.
 MAX_MEETINGS=3
 # Перезапуск оркестратора дольше 90 с обрывает идущие записи: контейнер встречи выходит сам, если
@@ -47,6 +49,15 @@ protect() { mkdir -p "$1" && chmod 700 "$1"; }
 read_token() {
   [ -s "$TOKEN_FILE" ] || die "токена бота нет: сперва stand.sh token-hash и запись хеша в прод"
   tr -d '\r\n' < "$TOKEN_FILE"
+}
+
+read_signal_secret() {
+  [ -s "$SIGNAL_SECRET_FILE" ] ||
+    die "нет общего секрета сигналов: сначала согласованная настройка configure-push.py --apply"
+  local secret
+  secret=$(tr -d '\r\n' < "$SIGNAL_SECRET_FILE")
+  [[ "$secret" =~ ^[a-f0-9]{64}$ ]] || die "signal.secret должен содержать 32 случайных байта в hex"
+  printf '%s' "$secret"
 }
 
 token_hash() {
@@ -90,8 +101,10 @@ prod_up() {
     die "входа бота нет ($ACCOUNT_DIR/google-state.json): гостем в боевые встречи не идём"
   protect "$STATE"
   mkdir -p "$STATE/lease" "$STATE/account-copies" "$STATE/runs"
-  local token rev version image egress_extra=""
+  local token signal_secret rev version image egress_extra=""
   token=$(read_token)
+  signal_secret=$(read_signal_secret)
+  docker network inspect "$API_NETWORK" >/dev/null 2>&1 || die "нет внутренней сети Swarm $API_NETWORK"
   # Добавка к списку выхода встреч наружу (T178): одна строка «host:port,host:port» в
   # $STATE/egress-extra. Нужна, когда живой встрече не хватило хоста (медиасерверы Толка, T111):
   # его имя стоит в строке «egress deny» журнала прокси scriba-prod-egress.
@@ -116,6 +129,8 @@ SCRIBA_SWARM_URL=$SWARM_URL
 SCRIBA_BOT_TOKEN=$token
 SCRIBA_BOT_VERSION=$version
 SCRIBA_MAX_MEETINGS=$MAX_MEETINGS
+SCRIBA_API_NETWORK=$API_NETWORK
+SCRIBA_SIGNAL_SECRET=$signal_secret
 SCRIBA_EGRESS_EXTRA=$egress_extra
 PROD_STATE_DIR=$STATE
 PROD_ACCOUNT_DIR=$ACCOUNT_DIR

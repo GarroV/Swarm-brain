@@ -51,6 +51,7 @@ export interface FakeInvite {
 export interface InviteRecord {
   readonly invite: FakeInvite;
   taken: boolean;
+  started?: boolean;
   used: boolean;
 }
 
@@ -125,6 +126,7 @@ export interface FakeSwarm {
   X-On-Behalf-Of, на Meet, со сроком 15 минут.
   */
   addInvite(input: {
+    id?: string;
     joinUrl: string;
     platform?: string;
     invitedBy?: number;

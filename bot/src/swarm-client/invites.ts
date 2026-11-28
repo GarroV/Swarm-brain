@@ -1,13 +1,8 @@
 /**
- * Клиент `POST /meeting-invite` — откуда оркестратор узнаёт, что человек позвал бота (D017).
- *
- * Отдельно от `SwarmClient`, потому что личность здесь другая: `SwarmClient` всегда говорит от
- * имени человека (`X-On-Behalf-Of`), а дверь `meeting-invite` пускает только сам токен агента и
- * подмену отвергает 403 — приглашения воркспейса забирает служба, а не человек.
- *
- * Повторов нет намеренно. Сервер отдаёт каждое приглашение ровно один раз: ответ, потерянный
- * после забора, повтор не вернёт, а следующий опрос оркестратора и так придёт через несколько
- * секунд. Сбой запроса — исключение, решение о нём принимает опрашивающий.
+ * Клиент `POST /meeting-invite`: служебный агент без X-On-Behalf-Of забирает приглашение
+ * своего воркспейса. По push-сигналу передаёт {id}; после запуска — {id,started:true}.
+ * Транспортная ошибка возвращается обработчику сигнала: durable очередь Swarm повторит
+ * доставку, а условный забор и идентичность Docker не дадут запустить второго бота.
  */
 import type { MeetingInvite } from "./contract.ts";
 import {
@@ -17,7 +12,7 @@ import {
   SwarmTransportError,
 } from "./errors.ts";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 25_000;
 const PATH = "/meeting-invite";
 
 export interface InviteClientConfig {
@@ -118,7 +113,7 @@ export class InviteClient {
   /**
    * Забрать ожидающие приглашения своего воркспейса. Забранное другим уже не вернётся.
    */
-  async take(limit?: number): Promise<TakenInvites> {
+  async take(limit?: number, id?: string, hasStarted = false): Promise<TakenInvites> {
     let response: Response;
     try {
       response = await this.doFetch(this.url, {
@@ -127,8 +122,12 @@ export class InviteClient {
           Authorization: `Bearer ${this.config.token}`,
           "Content-Type": "application/json",
         },
-        ...(limit !== undefined && { body: JSON.stringify({ limit }) }),
-        signal: AbortSignal.timeout(this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        ...((limit !== undefined || id !== undefined) && {
+          body: JSON.stringify({ limit, id, ...(hasStarted && { started: true }) }),
+        }),
+        signal: AbortSignal.timeout(
+          this.config.timeoutMs ?? (hasStarted ? 8000 : DEFAULT_TIMEOUT_MS),
+        ),
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
